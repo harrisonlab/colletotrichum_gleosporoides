@@ -84,8 +84,12 @@ The sequencing coverage for isolates was estimated by counting all the
 nucleotides in the trimmed fastq files and dividing this by the estimated
 genome size.
 
+Note - Genome size was determined by Assembly size of previous Cg sequencing project:
+https://www.ncbi.nlm.nih.gov/genome?LinkName=nuccore_genome&from_uid=530480622
+
+
 ```bash
-  Size=50
+  Size=55
   for TrimPath in $(ls -d qc_dna/paired/*/*); do
     ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/dna_qc
     TrimF=$(ls $TrimPath/F/*.fastq*)
