@@ -180,23 +180,23 @@ The TransposonPSI masked bases were used to mask additional bases from the
 repeatmasker / repeatmodeller softmasked and harmasked files.
 
 ```bash
-  for File in $(ls repeat_masked/*/*/*/*_contigs_softmasked.fa); do
-    OutDir=$(dirname $File)
-    TPSI=$(ls $OutDir/*_contigs_unmasked.fa.TPSI.allHits.chains.gff3)
-    OutFile=$(echo $File | sed 's/_contigs_softmasked.fa/_contigs_softmasked_repeatmasker_TPSI_appended.fa/g')
-    echo "$OutFile"
-    bedtools maskfasta -soft -fi $File -bed $TPSI -fo $OutFile
-    echo "Number of masked bases:"
-    cat $OutFile | grep -v '>' | tr -d '\n' | awk '{print $0, gsub("[a-z]", ".")}' | cut -f2 -d ' '
-  done
-  # The number of N's in hardmasked sequence are not counted as some may be present within the assembly and were therefore not repeatmasked.
-  for File in $(ls repeat_masked/*/*/*/*_contigs_hardmasked.fa); do
-    OutDir=$(dirname $File)
-    TPSI=$(ls $OutDir/*_contigs_unmasked.fa.TPSI.allHits.chains.gff3)
-    OutFile=$(echo $File | sed 's/_contigs_hardmasked.fa/_contigs_hardmasked_repeatmasker_TPSI_appended.fa/g')
-    echo "$OutFile"
-    bedtools maskfasta -fi $File -bed $TPSI -fo $OutFile
-  done
+for File in $(ls repeat_masked/*/*/*/*_contigs_softmasked.fa); do
+OutDir=$(dirname $File)
+TPSI=$(ls $OutDir/*_contigs_unmasked.fa.TPSI.allHits.chains.gff3)
+OutFile=$(echo $File | sed 's/_contigs_softmasked.fa/_contigs_softmasked_repeatmasker_TPSI_appended.fa/g')
+echo "$OutFile"
+bedtools maskfasta -soft -fi $File -bed $TPSI -fo $OutFile
+echo "Number of masked bases:"
+cat $OutFile | grep -v '>' | tr -d '\n' | awk '{print $0, gsub("[a-z]", ".")}' | cut -f2 -d ' '
+done
+# The number of N's in hardmasked sequence are not counted as some may be present within the assembly and were therefore not repeatmasked.
+for File in $(ls repeat_masked/*/*/*/*_contigs_hardmasked.fa); do
+OutDir=$(dirname $File)
+TPSI=$(ls $OutDir/*_contigs_unmasked.fa.TPSI.allHits.chains.gff3)
+OutFile=$(echo $File | sed 's/_contigs_hardmasked.fa/_contigs_hardmasked_repeatmasker_TPSI_appended.fa/g')
+echo "$OutFile"
+bedtools maskfasta -fi $File -bed $TPSI -fo $OutFile
+done
 ```
 
 The number of bases masked by transposonPSI and Repeatmasker were summarised
@@ -217,6 +217,17 @@ printf "The total number of masked bases are:\t"
 cat $RepMaskGff $TransPSIGff | sortBed | bedtools merge | awk -F'\t' 'BEGIN{SUM=0}{ SUM+=$3-$2 }END{print SUM}'
 echo
 done
+```
+```
+C.gloeosporioides	CGMCC3_17371
+The number of bases masked by RepeatMasker:	1226490
+The number of bases masked by TransposonPSI:	269923
+The total number of masked bases are:	1411323
+
+C.gloeosporioides	Nara_gc5
+The number of bases masked by RepeatMasker:	756936
+The number of bases masked by TransposonPSI:	195889
+The total number of masked bases are:	933627
 ```
 
 
@@ -318,41 +329,41 @@ cufflinks was running.
 
 ```bash
 	# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
-  for Assembly in $(ls assembly/spades/*/*/filtered_contigs/contigs_min_500bp.fasta); do
-    Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
-    Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
-    Jobs=$(qstat | grep 'rna_qc_fas' | wc -l)
-    while [ $Jobs -ge 1 ]; do
-      sleep 5m
-      printf "."
-      Jobs=$(qstat | grep 'rna_qc_fas' | wc -l)
-    done
-    echo "$Organism - $Strain"
-    for RNADir in $(ls -d qc_rna/paired/F.oxysporum_fsp_cepae/*); do
-      # Timepoint=$(echo $RNADir | rev | cut -f1 -d '/' | rev)
-      # echo "$Timepoint"
-      FileF=$(ls $RNADir/F/*_trim.fq.gz)
-      FileR=$(ls $RNADir/R/*_trim.fq.gz)
-      # OutDir=alignment/$Organism/$Strain/$Timepoint
-      OutDir=alignment/$Organism/$Strain
-      ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/RNAseq
-      qsub $ProgDir/tophat_alignment.sh $Assembly $FileF $FileR $OutDir
-    done
-  done
+for Assembly in $(ls assembly/spades/*/*/filtered_contigs/contigs_min_500bp.fasta); do
+Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+# Jobs=$(qstat | grep 'rna_qc_fas' | wc -l)
+# while [ $Jobs -ge 1 ]; do
+#   sleep 5m
+#   printf "."
+#   Jobs=$(qstat | grep 'rna_qc_fas' | wc -l)
+# done
+echo "$Organism - $Strain"
+for RNADir in $(ls -d qc_rna/paired/*/*); do
+  # Timepoint=$(echo $RNADir | rev | cut -f1 -d '/' | rev)
+  # echo "$Timepoint"
+  FileF=$(ls $RNADir/F/*_trim.fq.gz)
+  FileR=$(ls $RNADir/R/*_trim.fq.gz)
+  # OutDir=alignment/$Organism/$Strain/$Timepoint
+  OutDir=alignment/$Organism/$Strain
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/RNAseq
+  qsub $ProgDir/tophat_alignment.sh $Assembly $FileF $FileR $OutDir
+done
+done
 ```
 Alignments were concatenated prior to running cufflinks:
 Cufflinks was run to produce the fragment length and stdev statistics:
-<!--
+
 ```bash
-	for Assembly in $(ls repeat_masked/*/Fo47/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa | grep 'FOP2'); do
-		Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
-		Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
-		AcceptedHits=$(ls alignment/$Organism/$Strain/*/concatenated.bam)
-		OutDir=gene_pred/cufflinks/$Organism/$Strain/concatenated_prelim
-		echo "$Organism - $Strain"
-		mkdir -p $OutDir
-		cufflinks -o $OutDir/cufflinks -p 8 --max-intron-length 4000 $AcceptedHits 2>&1 | tee $OutDir/cufflinks/cufflinks.log
-	done
+for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
+Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+AcceptedHits=$(ls alignment/$Organism/$Strain/*/concatenated.bam)
+OutDir=gene_pred/cufflinks/$Organism/$Strain/concatenated_prelim
+echo "$Organism - $Strain"
+mkdir -p $OutDir
+cufflinks -o $OutDir/cufflinks -p 8 --max-intron-length 4000 $AcceptedHits 2>&1 | tee $OutDir/cufflinks/cufflinks.log
+done
 ```
 
 Output from stdout included:
@@ -373,7 +384,7 @@ The Estimated Mean: 181.98 allowed calculation of of the mean insert gap to be
 on a second run (as the -r option) along with the fragment length stdev to
 increase the accuracy of mapping.
 
-
+<!--
 Then Rnaseq data was aligned to each genome assembly:
 
 ```bash
