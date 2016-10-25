@@ -434,7 +434,7 @@ Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
 Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
 echo "$Organism - $Strain"
 mkdir -p alignment/$Organism/$Strain/concatenated
-OutDir=gene_pred/braker/$Organism/"$Strain"_braker_pacbio
+OutDir=gene_pred/braker/$Organism/"$Strain"_braker_new
 AcceptedHits=$(ls alignment/$Organism/$Strain/*/accepted_hits.bam)
 GeneModelName="$Organism"_"$Strain"_braker_new
 rm -r /home/armita/prog/augustus-3.1/config/species/"$Organism"_"$Strain"_braker_new
@@ -446,10 +446,609 @@ done
 Fasta and gff files were extracted from Braker1 output.
 
 ```bash
-	for File in $(ls gene_pred/braker/F.*/*_braker_new/*/augustus.gff | grep -w -e '125' -e 'A23' -e 'A13' -e 'A28' -e 'CB3' -e 'PG' -e 'A8' -e 'N139'); do
-		getAnnoFasta.pl $File
-		OutDir=$(dirname $File)
-		echo "##gff-version 3" > $OutDir/augustus_extracted.gff
-		cat $File | grep -v '#' >> $OutDir/augustus_extracted.gff
+for File in $(ls gene_pred/braker/*/*_braker_new/*/augustus.gff); do
+getAnnoFasta.pl $File
+OutDir=$(dirname $File)
+echo "##gff-version 3" > $OutDir/augustus_extracted.gff
+cat $File | grep -v '#' >> $OutDir/augustus_extracted.gff
+done
+```
+
+
+## Supplimenting Braker gene models with CodingQuary genes
+
+Additional genes were added to Braker gene predictions, using CodingQuary in
+pathogen mode to predict additional regions.
+
+Fistly, aligned RNAseq data was assembled into transcripts using Cufflinks.
+
+Note - cufflinks doesn't always predict direction of a transcript and
+therefore features can not be restricted by strand when they are intersected.
+
+```bash
+for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
+Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+echo "$Organism - $Strain"
+OutDir=gene_pred/cufflinks/$Organism/$Strain/concatenated
+mkdir -p $OutDir
+AcceptedHits=$(ls alignment/$Organism/$Strain/*/accepted_hits.bam)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/RNAseq
+qsub $ProgDir/sub_cufflinks.sh $AcceptedHits $OutDir
+done
+```
+
+Secondly, genes were predicted using CodingQuary:
+
+```bash
+
+for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
+Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+Jobs=$(qstat | grep 'sub_cuff' | wc -l)
+while [ $Jobs -ge 1 ]; do
+sleep 10
+printf "."
+Jobs=$(qstat | grep 'sub_cuff' | wc -l)
+done
+echo "$Organism - $Strain"
+OutDir=gene_pred/codingquary/$Organism/$Strain
+CufflinksGTF=gene_pred/cufflinks/$Organism/$Strain/concatenated/transcripts.gtf
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
+qsub $ProgDir/sub_CodingQuary.sh $Assembly $CufflinksGTF $OutDir
+done
+```
+
+Then, additional transcripts were added to Braker gene models, when CodingQuary
+genes were predicted in regions of the genome, not containing Braker gene
+models:
+
+```bash
+	# for BrakerGff in $(ls gene_pred/braker/F.*/*_braker_new/*/augustus.gff3 | grep -w -e 'Fus2'); do
+for BrakerGff in $(ls gene_pred/braker/*/*_braker_new/*/augustus.gff3); do
+Strain=$(echo $BrakerGff| rev | cut -d '/' -f3 | rev | sed 's/_braker_new//g' | sed 's/_braker_pacbio//g')
+Organism=$(echo $BrakerGff | rev | cut -d '/' -f4 | rev)
+echo "$Organism - $Strain"
+Assembly=$(ls repeat_masked/$Organism/$Strain/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa)
+CodingQuaryGff=gene_pred/codingquary/$Organism/$Strain/out/PredictedPass.gff3
+PGNGff=gene_pred/codingquary/$Organism/$Strain/out/PGN_predictedPass.gff3
+AddDir=gene_pred/codingquary/$Organism/$Strain/additional
+FinalDir=gene_pred/codingquary/$Organism/$Strain/final
+AddGenesList=$AddDir/additional_genes.txt
+AddGenesGff=$AddDir/additional_genes.gff
+FinalGff=$AddDir/combined_genes.gff
+mkdir -p $AddDir
+mkdir -p $FinalDir
+
+bedtools intersect -v -a $CodingQuaryGff -b $BrakerGff | grep 'gene'| cut -f2 -d'=' | cut -f1 -d';' > $AddGenesList
+bedtools intersect -v -a $PGNGff -b $BrakerGff | grep 'gene'| cut -f2 -d'=' | cut -f1 -d';' >> $AddGenesList
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation
+$ProgDir/gene_list_to_gff.pl $AddGenesList $CodingQuaryGff CodingQuarry_v2.0 ID CodingQuary > $AddGenesGff
+$ProgDir/gene_list_to_gff.pl $AddGenesList $PGNGff PGNCodingQuarry_v2.0 ID CodingQuary >> $AddGenesGff
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
+
+$ProgDir/add_CodingQuary_features.pl $AddGenesGff $Assembly > $FinalDir/final_genes_CodingQuary.gff3
+$ProgDir/gff2fasta.pl $Assembly $FinalDir/final_genes_CodingQuary.gff3 $FinalDir/final_genes_CodingQuary
+cp $BrakerGff $FinalDir/final_genes_Braker.gff3
+$ProgDir/gff2fasta.pl $Assembly $FinalDir/final_genes_Braker.gff3 $FinalDir/final_genes_Braker
+cat $FinalDir/final_genes_Braker.pep.fasta $FinalDir/final_genes_CodingQuary.pep.fasta | sed -r 's/\*/X/g' > $FinalDir/final_genes_combined.pep.fasta
+cat $FinalDir/final_genes_Braker.cdna.fasta $FinalDir/final_genes_CodingQuary.cdna.fasta > $FinalDir/final_genes_combined.cdna.fasta
+cat $FinalDir/final_genes_Braker.gene.fasta $FinalDir/final_genes_CodingQuary.gene.fasta > $FinalDir/final_genes_combined.gene.fasta
+cat $FinalDir/final_genes_Braker.upstream3000.fasta $FinalDir/final_genes_CodingQuary.upstream3000.fasta > $FinalDir/final_genes_combined.upstream3000.fasta
+
+GffBraker=$FinalDir/final_genes_CodingQuary.gff3
+GffQuary=$FinalDir/final_genes_Braker.gff3
+GffAppended=$FinalDir/final_genes_appended.gff3
+cat $GffBraker $GffQuary > $GffAppended
+
+done
+```
+
+The final number of genes per isolate was observed using:
+```bash
+for DirPath in $(ls -d gene_pred/codingquary/*/*/final); do
+echo $DirPath;
+cat $DirPath/final_genes_Braker.pep.fasta | grep '>' | wc -l;
+cat $DirPath/final_genes_CodingQuary.pep.fasta | grep '>' | wc -l;
+cat $DirPath/final_genes_combined.pep.fasta | grep '>' | wc -l;
+echo "";
+done
+```
+
+
+
+## Effector genes
+
+Putative pathogenicity and effector related genes were identified within Braker
+gene models using a number of approaches:
+
+ * A) From Augustus gene models - Identifying secreted proteins
+ * B) From Augustus gene models - Effector identification using EffectorP
+ * D) From ORF fragments - Signal peptide & RxLR motif  
+ * E) From ORF fragments - Hmm evidence of WY domains  
+ * F) From ORF fragments - Hmm evidence of RxLR effectors  
+
+
+### A) From Augustus gene models - Identifying secreted proteins
+
+Required programs:
+ * SignalP-4.1
+ * TMHMM
+
+Proteins that were predicted to contain signal peptides were identified using
+the following commands:
+
+```bash
+SplitfileDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/signal_peptides
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/signal_peptides
+CurPath=$PWD
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+SplitDir=gene_pred/final_genes_split/$Organism/$Strain
+mkdir -p $SplitDir
+BaseName="$Organism""_$Strain"_final_preds
+$SplitfileDir/splitfile_500.py --inp_fasta $Proteome --out_dir $SplitDir --out_base $BaseName
+for File in $(ls $SplitDir/*_final_preds_*); do
+Jobs=$(qstat | grep 'pred_sigP' | wc -l)
+while [ $Jobs -gt 20 ]; do
+sleep 10
+printf "."
+Jobs=$(qstat | grep 'pred_sigP' | wc -l)
+done
+printf "\n"
+echo $File
+qsub $ProgDir/pred_sigP.sh $File signalp-4.1
+done
+done
+```
+
+
+The batch files of predicted secreted proteins needed to be combined into a
+single file for each strain. This was done with the following commands:
+```bash
+for SplitDir in $(ls -d gene_pred/final_genes_split/*/*); do
+Strain=$(echo $SplitDir | rev |cut -d '/' -f1 | rev)
+Organism=$(echo $SplitDir | rev |cut -d '/' -f2 | rev)
+InStringAA=''
+InStringNeg=''
+InStringTab=''
+InStringTxt=''
+SigpDir=final_genes_spli_signalp-4.1
+for GRP in $(ls -l $SplitDir/*_final_preds_*.fa | rev | cut -d '_' -f1 | rev | sort -n); do  
+InStringAA="$InStringAA gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp.aa";  
+InStringNeg="$InStringNeg gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp_neg.aa";  
+InStringTab="$InStringTab gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp.tab";
+InStringTxt="$InStringTxt gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp.txt";  
+done
+cat $InStringAA > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_sp.aa
+cat $InStringNeg > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_neg_sp.aa
+tail -n +2 -q $InStringTab > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_sp.tab
+cat $InStringTxt > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_sp.txt
+done
+```
+
+Some proteins that are incorporated into the cell membrane require secretion.
+Therefore proteins with a transmembrane domain are not likely to represent
+cytoplasmic or apoplastic effectors.
+
+Proteins containing a transmembrane domain were identified:
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/transmembrane_helices
+qsub $ProgDir/submit_TMHMM.sh $Proteome
+done
+```
+
+Those proteins with transmembrane domains were removed from lists of Signal
+peptide containing proteins
+
+```bash
+for File in $(ls gene_pred/trans_mem/*/*/*_TM_genes_neg.txt); do
+Strain=$(echo $File | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $File | rev | cut -f3 -d '/' | rev)
+echo "$Organism - $Strain"
+TmHeaders=$(echo "$File" | sed 's/neg.txt/neg_headers.txt/g')
+cat $File | cut -f1 > $TmHeaders
+SigP=$(ls gene_pred/final_genes_signalp-4.1/$Organism/$Strain/*_final_sp.aa)
+OutDir=$(dirname $SigP)
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_from_fasta.py --fasta $SigP --headers $TmHeaders > $OutDir/"$Strain"_final_sp_no_trans_mem.aa
+cat $OutDir/"$Strain"_final_sp_no_trans_mem.aa | grep '>' | wc -l
+done
+```
+
+
+### B) From Augustus gene models - Effector identification using EffectorP
+
+Required programs:
+ * EffectorP.py
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+BaseName="$Organism"_"$Strain"_EffectorP
+OutDir=analysis/effectorP/$Organism/$Strain
+ProgDir=~/git_repos/emr_repos/tools/seq_tools/feature_annotation/fungal_effectors
+qsub $ProgDir/pred_effectorP.sh $Proteome $BaseName $OutDir
+done
+```
+
+Those genes that were predicted as secreted and tested positive by effectorP
+were identified:
+
+```bash
+for File in $(ls analysis/effectorP/*/*/*_EffectorP.txt); do
+Strain=$(echo $File | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $File | rev | cut -f3 -d '/' | rev)
+echo "$Organism - $Strain"
+Headers=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_headers.txt/g')
+cat $File | grep 'Effector' | cut -f1 > $Headers
+Secretome=$(ls gene_pred/final_genes_signalp-4.1/$Organism/$Strain/*_final_sp_no_trans_mem.aa)
+OutFile=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_secreted.aa/g')
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_from_fasta.py --fasta $Secretome --headers $Headers > $OutFile
+OutFileHeaders=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_secreted_headers.txt/g')
+cat $OutFile | grep '>' | tr -d '>' > $OutFileHeaders
+cat $OutFileHeaders | wc -l
+Gff=$(ls gene_pred/final/$Organism/$Strain/*/final_genes_appended.gff3)
+EffectorP_Gff=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_secreted.gff/g')
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_gff_for_sigP_hits.pl $OutFileHeaders $Gff effectorP ID > $EffectorP_Gff
+done
+```
+
+```
+  C.gloeosporioides - CGMCC3_17371
+  485
+```
+
+
+#Functional annotation
+
+## A) Interproscan
+
+Interproscan was used to give gene models functional annotations.
+Annotation was run using the commands below:
+
+Note: This is a long-running script. As such, these commands were run using
+'screen' to allow jobs to be submitted and monitored in the background.
+This allows the session to be disconnected and reconnected over time.
+
+Screen output detailing the progress of submission of interproscan jobs
+was redirected to a temporary output file named interproscan_submission.log .
+
+```bash
+	screen -a
+	cd /home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides
+	ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/interproscan
+	for Genes in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+	echo $Genes
+	$ProgDir/sub_interproscan.sh $Genes
+	done 2>&1 | tee -a interproscan_submisison.log
+```
+
+Following interproscan annotation split files were combined using the following
+commands:
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/interproscan
+for Proteins in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+Strain=$(echo $Proteins | rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Proteins | rev | cut -d '/' -f4 | rev)
+echo "$Organism - $Strain"
+echo $Strain
+InterProRaw=gene_pred/interproscan/$Organism/$Strain/raw
+$ProgDir/append_interpro.sh $Proteins $InterProRaw
+done
+```
+
+
+## B) SwissProt
+
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+OutDir=gene_pred/swissprot/$Organism/$Strain
+SwissDbDir=../../uniprot/swissprot
+SwissDbName=uniprot_sprot
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swissprot
+qsub $ProgDir/sub_swissprot.sh $Proteome $OutDir $SwissDbDir $SwissDbName
+done
+```
+
+```bash
+	for SwissTable in $(ls gene_pred/swissprot/*/*/swissprot_v2015_10_hits.tbl); do
+		Strain=$(echo $SwissTable | rev | cut -f2 -d '/' | rev)
+		Organism=$(echo $SwissTable | rev | cut -f3 -d '/' | rev)
+		echo "$Organism - $Strain"
+		OutTable=gene_pred/swissprot/$Organism/$Strain/swissprot_vJul2016_tophit_parsed.tbl
+		ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swissprot
+		$ProgDir/swissprot_parser.py --blast_tbl $SwissTable --blast_db_fasta ../../uniprot/swissprot/uniprot_sprot.fasta > $OutTable
 	done
+```
+
+
+
+## 5.2 Identifying PHIbase homologs
+
+The PHIbase database was searched against the assembled genomes using tBLASTx.
+
+```bash
+# mkdir -p blast_homology/PHIbase
+# cp ../fusarium/analysis/blast_homology/PHIbase/PHI_36_accessions.fa analysis/blast_homology/PHIbase/PHI_36_accessions.fa
+for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
+# Version 4.2 October 3rd 2016
+Version=v4.2
+DbDir=/home/groups/harrisonlab/phibase/$Version
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+qsub $ProgDir/blast_pipe.sh $DbDir/PHI_accessions.fa protein $Assembly
+done
+```
+
+following blasting PHIbase to the genome, the hits were filtered by effect on
+virulence.
+
+First the a tab seperated file was made in the clusters core directory containing
+PHIbase. These commands were run as part of previous projects but have been
+included here for completeness.
+<!--
+```bash
+	PhibaseDir=/home/groups/harrisonlab/phibase/v3.8
+	printf "header\n" > $PhibaseDir/PHI_headers.csv
+	cat $PhibaseDir/PHI_accessions.fa | grep '>' | cut -f1 | sed 's/>//g' | sed 's/\r//g' >> $PhibaseDir/PHI_headers.csv
+	printf "effect\n" > .$PhibaseDir/PHI_virulence.csv
+	cat $PhibaseDir/PHI_accessions.fa | grep '>' | cut -f1 | sed 's/>//g' | rev | cut -f1 -d '|' | rev  >> $PhibaseDir/PHI_virulence.csv
+```
+
+
+```bash
+	PhibaseDir=/home/groups/harrisonlab/phibase/v3.8
+	PhibaseHeaders=$PhibaseDir/PHI_headers.csv
+	PhibaseVirulence=$PhibaseDir/PHI_virulence.csv
+	for BlastCSV in $(ls analysis/blast_homology/F*/*/*_PHI_36_accessions.fa_homologs.csv); do
+		Strain=$(echo $BlastCSV | rev | cut -f2 -d'/' | rev)
+		echo "$Strain"
+		OutDir=$(dirname $BlastCSV)
+		paste -d '\t' $PhibaseHeaders $PhibaseVirulence $BlastCSV | cut -f-3,1185- > $OutDir/"$Strain"_PHIbase_virulence.csv
+		cat $OutDir/"$Strain"_PHIbase_virulence.csv | grep 'NODE_' | cut -f2 | sort | uniq -c | tee $OutDir/"$Strain"_PHIbase_virulence.txt
+	done
+```
+-->
+
+
+## C) CAZY proteins
+
+Carbohydrte active enzymes were identified using CAZY following recomendations
+at http://csbl.bmb.uga.edu/dbCAN/download/readme.txt :
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+OutDir=gene_pred/CAZY/$Organism/$Strain
+mkdir -p $OutDir
+Prefix="$Strain"_CAZY
+CazyHmm=../../dbCAN/dbCAN-fam-HMMs.txt
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/HMMER
+qsub $ProgDir/sub_hmmscan.sh $CazyHmm $Proteome $Prefix $OutDir
+done
+```
+
+The Hmm parser was used to filter hits by an E-value of E1x10-5 or E 1x10-e3 if they had a hit over a length of X %.
+
+Those proteins with a signal peptide were extracted from the list and  gff files
+representing these proteins made.
+
+```bash
+for File in $(ls gene_pred/CAZY/*/*/*CAZY.out.dm); do
+Strain=$(echo $File | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $File | rev | cut -f3 -d '/' | rev)
+OutDir=$(dirname $File)
+echo "$Organism - $Strain"
+ProgDir=/home/groups/harrisonlab/dbCAN
+$ProgDir/hmmscan-parser.sh $OutDir/"$Strain"_CAZY.out.dm > $OutDir/"$Strain"_CAZY.out.dm.ps
+CazyHeaders=$(echo $File | sed 's/.out.dm/_headers.txt/g')
+cat $OutDir/"$Strain"_CAZY.out.dm.ps | cut -f3 | sort | uniq > $CazyHeaders
+echo "number of CAZY genes identified:"
+cat $CazyHeaders | wc -l
+# Gff=$(ls gene_pred/codingquary/$Organism/$Strain/final/final_genes_appended.gff3)
+Gff=$(ls gene_pred/final/$Organism/$Strain/final/final_genes_appended.gff3)
+CazyGff=$OutDir/"$Strain"_CAZY.gff
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_gff_for_sigP_hits.pl $CazyHeaders $Gff CAZyme ID > $CazyGff
+
+SecretedProts=$(ls gene_pred/final_genes_signalp-4.1/$Organism/$Strain/"$Strain"_final_sp_no_trans_mem.aa)
+SecretedHeaders=$(echo $SecretedProts | sed 's/.aa/_headers.txt/g')
+cat $SecretedProts | grep '>' | tr -d '>' > $SecretedHeaders
+CazyGffSecreted=$OutDir/"$Strain"_CAZY_secreted.gff
+$ProgDir/extract_gff_for_sigP_hits.pl $SecretedHeaders $CazyGff Secreted_CAZyme ID > $CazyGffSecreted
+echo "number of Secreted CAZY genes identified:"
+cat $CazyGffSecreted | grep -w 'mRNA' | cut -f9 | tr -d 'ID=' | cut -f1 -d ';' > $OutDir/"$Strain"_CAZY_secreted_headers.txt
+cat $OutDir/"$Strain"_CAZY_secreted_headers.txt | wc -l
+done
+```
+
+```
+number of CAZY genes identified:
+1048
+530
+```
+
+Note - the CAZY genes identified may need further filtering based on e value and
+cuttoff length - see below:
+
+Cols in yourfile.out.dm.ps:
+1. Family HMM
+2. HMM length
+3. Query ID
+4. Query length
+5. E-value (how similar to the family HMM)
+6. HMM start
+7. HMM end
+8. Query start
+9. Query end
+10. Coverage
+
+* For fungi, use E-value < 1e-17 and coverage > 0.45
+
+* The best threshold varies for different CAZyme classes (please see http://www.ncbi.nlm.nih.gov/pmc/articles/PMC4132414/ for details). Basically to annotate GH proteins, one should use a very relax coverage cutoff or the sensitivity will be low (Supplementary Tables S4 and S9); (ii) to annotate CE families a very stringent E-value cutoff and coverage cutoff should be used; otherwise the precision will be very low due to a very high false positive rate (Supplementary Tables S5 and S10)
+
+
+
+## Identifying Chittin-masking genes
+
+Protein sequence of previously characterised SIX genes used to BLAST against
+assemblies.
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
+echo $Assembly
+Query=analysis/blast_homology/LysM_genes/Mentlak_et_al_2012_LysM_Sup1.fa
+qsub $ProgDir/blast_pipe.sh $Query protein $Assembly
+done
+```
+
+Once blast searches had completed, the BLAST hits were converted to GFF
+annotations:
+
+```bash
+for BlastHits in $(ls analysis/blast_homology/*/*/*Mentlak_et_al_2012_LysM_Sup1.fa_homologs.csv); do
+Strain=$(echo $BlastHits | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $BlastHits | rev | cut -f3 -d '/' | rev)
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+HitsGff=$(echo $BlastHits | sed  's/.csv/.gff/g')
+Column2=LysM_homolog
+NumHits=3
+$ProgDir/blast2gff.pl $Column2 $NumHits $BlastHits > $HitsGff
+done
+```
+
+The M. oryzae Chittin masking gene that has been shown to be essential for
+infection was extracted from blast hits:
+
+```bash
+Hits=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_Mentlak_et_al_2012_LysM_Sup1.fa_homologs.csv
+echo "The hit for spl1 is:"
+cat $Hits | grep -e 'No.hits' -e 'MGG_10097_Magnaporthe_oryzae'
+echo "The hit for spl2 is:"
+cat $Hits | grep -e 'No.hits' -e 'MGG_03468_Magnaporthe_oryzae'
+```
+This identified two hits in the genome, one to NODE 256 and one to node 116.
+Node 116 had the better match. The Mentlak paper describes there being two copies
+of the Spl gene in the Mo genome, with the second being non-essential for infection.
+
+Hits from spl queries showed greater homology from spl1 (~76% length and 0.49%
+identity) than those from spl2 (~47% length and 0.17% identity)
+
+The gff annotations of blast hits were intersected with predicted gene models
+to determine which genes represented these regions.
+
+```bash
+for HitsGff in $(ls analysis/blast_homology/*/*/*Mentlak_et_al_2012_LysM_Sup1.fa_homologs.gff | grep 'CGMCC3_17371'); do
+Strain=$(echo $HitsGff | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $HitsGff | rev | cut -f3 -d '/' | rev)
+GeneGff=$(ls gene_pred/final/$Organism/$Strain/final/final_genes_appended.gff3)
+OutDir=$(dirname $HitsGff)
+LysmIntersect=$OutDir/"$Strain"_LysM_hit_genes.bed
+bedtools intersect -wao -a $HitsGff -b $GeneGff > $LysmIntersect
+echo "Gene models intersected are:"
+cat $LysmIntersect | grep -w 'gene' | cut -f18 | cut -f2 -d '=' | tr -d ';' | sort | uniq
+done
+```
+
+Gene models intersected were g11852 & g14420.
+```
+>g11852.t1
+MQTSYIFTTLLAAAGLVAALPQATPTQVTPTGTASATASATPTCSQGPVVDYTVVSGDTL
+TIISQKLSSGICDIAKLNSLENPNLILLGQVLKVPTHICNPDNTSCLSKPGTATCVEGGP
+ATYTIQKGDTFFIVAGDLGLDVNALLAANEGVDPLLLQEGQVINIPVCKX
+>g14420.t1
+MQFSIFTVLAAAASAVVALPAATPTAAATATPSATCGKIGNFHKTTVKAGQTLTTIAQRY
+NSGICDIAWQNKLANPNVIFAGQVLLVPVDVCNPDNTSCITPTGEATCVTGGPATYTIKS
+GDTFFVVAQSLGITTDSLTGANPGVAAESLQVGQVIKVPVCX
+```
+
+These results were cross referenced against interproscan annotation results:
+
+```bash
+  OutDir=analysis/LysM
+  mkdir -p $OutDir
+  InterproTsv=gene_pred/interproscan/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_interproscan.tsv
+  cat $InterproTsv | grep -w 'LysM domain' | cut -f1 | sort | uniq > $OutDir/LysM_gene_headers.txt
+  echo "Number of LysM proteins:"
+  cat $OutDir/LysM_gene_headers.txt | wc -l
+  Secretedheaders=gene_pred/final_genes_signalp-4.1/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_final_sp_no_trans_mem_headers.txt
+  cat $Secretedheaders | grep -f $OutDir/LysM_gene_headers.txt > $OutDir/LysM_gene_headers_secreted.txt
+  echo "Number of secreted LysM proteins:"
+  cat $OutDir/LysM_gene_headers_secreted.txt | wc -l
+```
+
+Number of LysM proteins:
+31
+Number of secreted LysM proteins:
+18
+
+The secreted list included both g11852 & g14420.
+
+## Extracting sequence data for phylogenetic loci
+
+Nucleotide sequences of phylogenetic loci ACT, CAL, GAPD, ITS, GS, Btub, ApMat
+were identified in the genome assemblies.
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
+echo $Assembly
+Query=analysis/blast_homology/phylogenetic_loci/phylogenetic_loci.fa
+qsub $ProgDir/blast_pipe.sh $Query dna $Assembly
+done
+```
+
+Once blast searches had completed, the BLAST hits were converted to GFF
+annotations:
+
+```bash
+for BlastHits in $(ls analysis/blast_homology/*/*/*phylogenetic_loci.fa_homologs.csv); do
+Strain=$(echo $BlastHits | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $BlastHits | rev | cut -f3 -d '/' | rev)
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+HitsGff=$(echo $BlastHits | sed  's/.csv/.gff/g')
+Column2=phylogenetic_locus
+NumHits=4
+$ProgDir/blast2gff.pl $Column2 $NumHits $BlastHits > $HitsGff
+done
+```
+
+The hits of these loci were manually edited so that the gff annotation name
+contained the locus ID
+
+```bash
+  HitsGff=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_phylogenetic_loci.fa_homologs.gff
+  EditedHitsGff=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_phylogenetic_loci_edited_homologs.gff
+  cp  $HitsGff $EditedHitsGff
+  nano $EditedHitsGff
+```
+
+The hit and the 1000bp upstream and downstream
+ of the hit were extracted as a fasta file:
+
+```bash
+Genome=repeat_masked/C.gloeosporioides/CGMCC3_17371/first_assembly/CGMCC3_17371_contigs_unmasked.fa
+HitsGff=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_phylogenetic_loci_edited_homologs.gff
+Strain=$(echo $HitsGff | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $HitsGff | rev | cut -f3 -d '/' | rev)
+OutDir=analysis/phylogenetics/$Organism/$Strain
+mkdir -p $OutDir
+ProgDir="/home/armita/git_repos/emr_repos/tools/pathogen/mimp_finder"
+$ProgDir/gffexpander.pl +- 500 $HitsGff > $OutDir/"$Strain"_loci_exp_500bp.gff
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+$ProgDir/sequence_extractor.py --coordinates_file $OutDir/"$Strain"_loci_exp_500bp.gff --header_column 1 --start_column 4 --stop_column 5 --strand_column  7 --id_column 9 --fasta_file $Genome | sed 's/"ID=//g' | sed 's/";//g'> $OutDir/"$Strain"_loci_exp_500bp.fa
 ```
