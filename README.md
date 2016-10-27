@@ -1031,24 +1031,34 @@ The hits of these loci were manually edited so that the gff annotation name
 contained the locus ID
 
 ```bash
+  # for CGMCC3_17371
   HitsGff=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_phylogenetic_loci.fa_homologs.gff
   EditedHitsGff=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_phylogenetic_loci_edited_homologs.gff
   cp  $HitsGff $EditedHitsGff
   nano $EditedHitsGff
+  # for nara_gc5
+  HitsGff=analysis/blast_homology/C.gloeosporioides/Nara_gc5/Nara_gc5_phylogenetic_loci.fa_homologs.gff
+  EditedHitsGff=analysis/blast_homology/C.gloeosporioides/Nara_gc5/Nara_gc5_phylogenetic_loci_edited_homologs.gff
+  cp  $HitsGff $EditedHitsGff
+  nano $EditedHitsGff
 ```
 
-The hit and the 1000bp upstream and downstream
+The hit and the 500bp upstream and downstream
  of the hit were extracted as a fasta file:
 
 ```bash
-Genome=repeat_masked/C.gloeosporioides/CGMCC3_17371/first_assembly/CGMCC3_17371_contigs_unmasked.fa
-HitsGff=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_phylogenetic_loci_edited_homologs.gff
-Strain=$(echo $HitsGff | rev | cut -f2 -d '/' | rev)
-Organism=$(echo $HitsGff | rev | cut -f3 -d '/' | rev)
-OutDir=analysis/phylogenetics/$Organism/$Strain
-mkdir -p $OutDir
-ProgDir="/home/armita/git_repos/emr_repos/tools/pathogen/mimp_finder"
-$ProgDir/gffexpander.pl +- 500 $HitsGff > $OutDir/"$Strain"_loci_exp_500bp.gff
-ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
-$ProgDir/sequence_extractor.py --coordinates_file $OutDir/"$Strain"_loci_exp_500bp.gff --header_column 1 --start_column 4 --stop_column 5 --strand_column  7 --id_column 9 --fasta_file $Genome | sed 's/"ID=//g' | sed 's/";//g'> $OutDir/"$Strain"_loci_exp_500bp.fa
+  for HitsGff in $(ls analysis/blast_homology/C.gloeosporioides/*/*_phylogenetic_loci_edited_homologs.gff); do
+    Strain=$(echo $HitsGff | rev | cut -f2 -d '/' | rev)
+    Organism=$(echo $HitsGff | rev | cut -f3 -d '/' | rev)
+    echo "$Organism - $Strain"
+    Genome=$(ls repeat_masked/$Organism/$Strain/first_assembly/"$Strain"_contigs_unmasked.fa)
+    # cat $Genome | sed 's/gi|.*|gb|A//g' | sed 's/ Colletotrichum gloeosporioides.*//g' > $OutDir/genome_parsed.fa
+    OutDir=analysis/phylogenetics/$Organism/$Strain
+    mkdir -p $OutDir
+    ProgDir="/home/armita/git_repos/emr_repos/tools/pathogen/mimp_finder"
+    $ProgDir/gffexpander.pl +- 500 $HitsGff > $OutDir/"$Strain"_loci_exp_500bp.gff
+    ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+    $ProgDir/sequence_extractor.py --coordinates_file $OutDir/"$Strain"_loci_exp_500bp.gff --header_column 1 --start_column 4 --stop_column 5 --strand_column  7 --id_column 9 --fasta_file $Genome | sed 's/"ID=//g' | sed 's/";//g'> $OutDir/"$Strain"_loci_exp_500bp.fa
+    # $ProgDir/sequence_extractor.py --coordinates_file $OutDir/"$Strain"_loci_exp_500bp.gff --header_column 1 --start_column 4 --stop_column 5 --strand_column  7 --id_column 9 --fasta_file $OutDir/genome_parsed.fa | sed 's/"ID=//g' | sed 's/";//g'> $OutDir/"$Strain"_loci_exp_500bp.fa
+  done
 ```
