@@ -35,11 +35,37 @@ Assembly of remaining reads
   Strain=CGMCC3_17371
   mkdir -p raw_dna/paired/$Species/$Strain/F
   mkdir -p raw_dna/paired/$Species/$Strain/R
-
-  cp $RawDatDir/Colletotrichum_S1_L001_R1_001.fastq.gz raw_dna/paired/$Species/$Strain/F/.
-  cp $RawDatDir/Colletotrichum_S1_L001_R2_001.fastq.gz raw_dna/paired/$Species/$Strain/R/.
+  # Oxford nanopore 16/12/16
+  RawDatDir=/home/miseq_data/minion/2016/minION-Stuart/Colletotrichum/downloaded/pass
+  Species=C.gloeosporioides
+  Strain=CGMCC3_17371
+  mkdir -p raw_dna/minion/$Species/$Strain/16-12-16
+  # poretools fastq $RawDatDir/ | gzip -cf > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.fastq.gz
+  poretools stats $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.stats.txt
+  poretools hist $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.hist
+  RawDatDir=/home/miseq_data/minion/2016/minION-Stuart/Colletotrichum/downloaded/fail
+  Species=C.gloeosporioides
+  Strain=CGMCC3_17371
+  mkdir -p raw_dna/minion/$Species/$Strain/16-12-16
+  # poretools fastq $RawDatDir/ | gzip -cf > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.fastq.gz
+  poretools stats $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.stats.txt
+  poretools hist $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.hist
+  cat raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.fastq.gz raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.fastq.gz > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_pass-fail.fastq.gz
 ```
 
+Pass nanopore data:
+This equates to ~ 5.5X coverage, assuming a 57Mb genome
+```
+  total reads	76476
+  total base pairs	312544262
+  mean	4086.83
+  median	3776
+  min	100
+  max	23631
+  N25	7722
+  N50	5861
+  N75	4054
+```
 
 #Data qc
 
@@ -48,7 +74,7 @@ programs:
   fastq-mcf
   kmc
 
-Data quality was visualised using fastqc:
+Data quality of illumina reads was visualised using fastqc:
 ```bash
   for RawData in $(ls raw_dna/paired/*/*/*/*.fastq.gz); do
   ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/dna_qc
@@ -73,11 +99,11 @@ Trimming was first performed on all strains that had a single run of data:
 
 Data quality was visualised once again following trimming:
 ```bash
-	for RawData in $(ls qc_dna/paired/*/*/*/*.fq.gz); do
-		ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/dna_qc
-		echo $RawData;
-		qsub $ProgDir/run_fastqc.sh $RawData
-	done
+for RawData in $(ls qc_dna/paired/*/*/*/*.fq.gz); do
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/dna_qc
+echo $RawData;
+qsub $ProgDir/run_fastqc.sh $RawData
+done
 ```
 
 The sequencing coverage for isolates was estimated by counting all the
@@ -120,7 +146,6 @@ qsub $ProgDir/kmc_kmer_counting.sh $TrimF $TrimR
 done
 ```
 
-
 mode kmer abundance prior to error correction was reported using the following
 commands:
 
@@ -131,17 +156,30 @@ commands:
   done
 ```
 
+
+Data quality was also visualised for minion data using fastqc:
+
+```bash
+  for RawData in $(ls raw_dna/minion/*/*/*.fastq.gz); do
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/dna_qc
+    echo $RawData
+    qsub $ProgDir/run_fastqc.sh $RawData
+  done
+```
+
+# Assembly
+<!--
 ```bash
 for StrainPath in $(ls -d qc_dna/paired/*/*); do
-	ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades
-	Strain=$(echo $StrainPath | rev | cut -f1 -d '/' | rev)
-	Organism=$(echo $StrainPath | rev | cut -f2 -d '/' | rev)
-	F_Read=$(ls $StrainPath/F/*.fq.gz)
-	R_Read=$(ls $StrainPath/R/*.fq.gz)
-	OutDir=assembly/spades/$Organism/$Strain
-	echo $F_Read
-	echo $R_Read
-	qsub $ProgDir/submit_SPAdes_HiMem.sh $F_Read $R_Read $OutDir correct 15
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades
+Strain=$(echo $StrainPath | rev | cut -f1 -d '/' | rev)
+Organism=$(echo $StrainPath | rev | cut -f2 -d '/' | rev)
+F_Read=$(ls $StrainPath/F/*.fq.gz)
+R_Read=$(ls $StrainPath/R/*.fq.gz)
+OutDir=assembly/spades/$Organism/$Strain
+echo $F_Read
+echo $R_Read
+qsub $ProgDir/submit_SPAdes_HiMem.sh $F_Read $R_Read $OutDir correct 15
 done
 ```
 
@@ -155,13 +193,218 @@ Quast
     OutDir=assembly/spades/$Organism/$Strain/filtered_contigs
     qsub $ProgDir/sub_quast.sh $Assembly $OutDir
   done
+``` -->
+
+
+### Canu assembly
+
+```bash
+  Organism=C.gloeosporioides
+  Strain=CGMCC3_17371
+  Reads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16.fastq.gz)
+  GenomeSz="57m"
+  Prefix="$Strain"
+  OutDir="assembly/canu-1.4/$Organism/$Strain"
+  ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/canu
+  qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
 ```
+Canu assembly was also run using the failed reads:
+
+```bash
+  Organism=C.gloeosporioides
+  Strain=CGMCC3_17371
+  Reads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16_pass-fail.fastq.gz)
+  GenomeSz="57m"
+  Prefix="$Strain"
+  OutDir="assembly/canu-1.4/$Organism/$Strain"_pass-fail
+  ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/canu
+  qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
+```
+
+### Quast
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+for Assembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371*/CGMCC3_17371.contigs.fasta); do
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+OutDir=assembly/canu-1.4/$Organism/$Strain/filtered_contigs
+qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+done
+```
+
+
+Assemblies were polished using Pilon
+
+```bash
+  for Assembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371*/CGMCC3_17371.contigs.fasta); do
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev | sed 's/_pass-fail//g' | sed 's/_73x//g')
+    IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+    TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
+    TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
+    OutDir=$(dirname $Assembly)
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
+    qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir/pilon
+  done
+```
+
+<!-- ```bash
+  Assembly=assembly/spades_pacbio/F.oxysporum_fsp_cepae/Fus2_3/pilon/pilon.fasta
+  # Assembly=assembly/spades_pacbio/F.oxysporum_fsp_cepae/Fus2_3/scaffolds.fasta
+  Reads=raw_dna/pacbio/F.oxysporum_fsp_cepae/Fus2/extracted/concatenated_pacbio.fastq
+  OutDir=analysis/genome_alignment/bwa/F.oxysporum_fsp_cepae/Fus2/vs_Fus2_spades_pacbio_3
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/genome_alignment/bwa
+  qsub $ProgDir/sub_bwa_pacbio.sh $Assembly $Reads $OutDir
+``` -->
+
+Inspection of flagged regions didn't identify any contigs that needed to be broken.
+
+### Hybrid assembly:
+
+#### Hybrid assembly: Spades Assembly
+
+```bash
+  Organism=C.gloeosporioides
+  Strain=CGMCC3_17371
+  MinionReads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16.fastq.gz)
+  IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+  TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
+  TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
+  OutDir=assembly/spades_pacbio/$Organism/"$Strain"
+  echo $TrimR1_Read
+  echo $TrimR1_Read
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades
+  qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir
+  # Coverage cuttoff could be set at 73/2 where 73 is the assumed coverage
+  CoverageCuttoff=35
+  OutDir=assembly/spades_pacbio/$Organism/"$Strain"_73x
+  qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir $CoverageCuttoff
+```
+
+Hybrid assembly was also performed using failed Minion reads:
+
+```bash
+Organism=C.gloeosporioides
+Strain=CGMCC3_17371
+MinionReads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16_pass-fail.fastq.gz)
+IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
+TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
+OutDir=assembly/spades_pacbio/$Organism/"$Strain"_pass-fail
+echo $TrimR1_Read
+echo $TrimR1_Read
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades
+qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir
+# Coverage cuttoff could be set at 73/2 where 73 is the assumed coverage
+CoverageCuttoff=35
+OutDir=assembly/spades_pacbio/$Organism/"$Strain"_73x_pass-fail
+qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir $CoverageCuttoff
+```
+
+### Quast
+
+```bash
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+  for Assembly in $(ls assembly/spades_pacbio/C.gloeosporioides/CGMCC3_17371*/scaffolds.fasta); do
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+    OutDir=assembly/spades_pacbio/$Organism/$Strain/filtered_contigs
+    qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+  done
+```
+<!--
+Assemblies were polished using Pilon
+
+```bash
+  for Assembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371.contigs.fasta); do
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+    TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
+    TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
+    OutDir=assembly/spades_pacbio/$Organism/$Strain/pilon
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
+    qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir
+  done
+```
+
+```bash
+  Assembly=assembly/spades_pacbio/F.oxysporum_fsp_cepae/Fus2_3/pilon/pilon.fasta
+  # Assembly=assembly/spades_pacbio/F.oxysporum_fsp_cepae/Fus2_3/scaffolds.fasta
+  Reads=raw_dna/pacbio/F.oxysporum_fsp_cepae/Fus2/extracted/concatenated_pacbio.fastq
+  OutDir=analysis/genome_alignment/bwa/F.oxysporum_fsp_cepae/Fus2/vs_Fus2_spades_pacbio_3
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/genome_alignment/bwa
+  qsub $ProgDir/sub_bwa_pacbio.sh $Assembly $Reads $OutDir
+```
+
+Inspection of flagged regions didn't identify any contigs that needed to be broken. -->
+
+
+
+## Merging pacbio and hybrid assemblies
+
+```bash
+  # for PacBioAssembly in $(ls assembly/canu/*/*/polished/pilon.fasta); do
+    # Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
+    # Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
+  for PacBioAssembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371.contigs.fasta); do
+    Organism=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
+    Strain=$(echo $PacBioAssembly | rev | cut -f2 -d '/' | rev)
+    HybridAssembly=$(ls assembly/spades_pacbio/C.gloeosporioides/CGMCC3_17371/contigs.fasta)
+    OutDir=assembly/merged_canu_spades/$Organism/$Strain
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
+    qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir
+  done
+```
+<!--
+This merged assembly was polished using Pilon
+
+```bash
+  for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta); do
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+    TrimF1_Read=$(ls $IlluminaDir/F/414_run1_F_trim.fq.gz);
+    TrimR1_Read=$(ls $IlluminaDir/R/414_run1_R_trim.fq.gz);
+    OutDir=assembly/merged_canu_spades/$Organism/$Strain/polished
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
+    qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir
+  done
+```
+
+Contigs were renamed in accordance with ncbi recomendations.
+
+```bash
+  touch tmp.csv
+  for Assembly in $(ls assembly/merged_canu_spades/*/*/polished/pilon.fasta); do
+    Strain=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+    Organism=$(echo $Assembly | rev | cut -f4 -d '/' | rev)  
+    OutDir=assembly/merged_canu_spades/$Organism/$Strain/filtered_contigs
+    ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/remove_contaminants
+    $ProgDir/remove_contaminants.py --inp $Assembly --out $OutDir/contigs_min_500bp_renamed.fasta --coord_file tmp.csv
+  done
+  rm tmp.csv
+```
+
+Quast
+
+```bash
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+  for Assembly in $(ls assembly/merged_canu_spades/*/*/filtered_contigs/contigs_min_500bp_renamed.fasta); do
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+    OutDir=assembly/merged_canu_spades/$Organism/$Strain/filtered_contigs
+    qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+  done
+``` -->
+
 
 # Repeatmasking
 
 Repeat masking was performed and used the following programs:
-	Repeatmasker
-	Repeatmodeler
+Repeatmasker
+Repeatmodeler
 
 The best assemblies were used to perform repeatmasking
 
@@ -235,12 +478,12 @@ The total number of masked bases are:	933627
 
 
 Gene prediction followed three steps:
-	Pre-gene prediction
-		- Quality of genome assemblies were assessed using Cegma to see how many core eukaryotic genes can be identified.
-	Gene model training
-		- Gene models were trained using assembled RNAseq data as part of the Braker1 pipeline
-	Gene prediction
-		- Gene models were used to predict genes in genomes as part of the the Braker1 pipeline. This used RNAseq data as hints for gene models.
+Pre-gene prediction
+- Quality of genome assemblies were assessed using Cegma to see how many core eukaryotic genes can be identified.
+Gene model training
+- Gene models were trained using assembled RNAseq data as part of the Braker1 pipeline
+Gene prediction
+- Gene models were used to predict genes in genomes as part of the the Braker1 pipeline. This used RNAseq data as hints for gene models.
 
 # Pre-gene prediction
 
@@ -262,7 +505,7 @@ printf "$Species\t$Strain\n";
 cat $File | head -n18 | tail -n+4;printf "\n";
 done > gene_pred/cegma/cegma_results_dna_summary.txt
 
-	less gene_pred/cegma/cegma_results_dna_summary.txt
+less gene_pred/cegma/cegma_results_dna_summary.txt
 ```
 
 
@@ -328,7 +571,7 @@ single genome. The fragment length and stdev were printed to stdout while
 cufflinks was running.
 
 ```bash
-	# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
+# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
 for Assembly in $(ls assembly/spades/*/*/filtered_contigs/contigs_min_500bp.fasta); do
 Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
 Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
@@ -420,8 +663,8 @@ done
 
 
 ```bash
-	# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa | grep -v 'HB17' | grep 'Fus2' | grep -e 'Fus2_canu_new' -e 'Fus2_merged' | grep 'cepae' | grep 'Fus2_merged'); do
-	# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa | grep 'proliferatum'); do
+# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa | grep -v 'HB17' | grep 'Fus2' | grep -e 'Fus2_canu_new' -e 'Fus2_merged' | grep 'cepae' | grep 'Fus2_merged'); do
+# for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa | grep 'proliferatum'); do
 for Assembly in $(ls repeat_masked/*/*/*/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
 Jobs=$(qstat | grep 'tophat' | grep -w 'r' | wc -l)
 while [ $Jobs -gt 1 ]; do
@@ -504,7 +747,7 @@ genes were predicted in regions of the genome, not containing Braker gene
 models:
 
 ```bash
-	# for BrakerGff in $(ls gene_pred/braker/F.*/*_braker_new/*/augustus.gff3 | grep -w -e 'Fus2'); do
+# for BrakerGff in $(ls gene_pred/braker/F.*/*_braker_new/*/augustus.gff3 | grep -w -e 'Fus2'); do
 for BrakerGff in $(ls gene_pred/braker/*/*_braker_new/*/augustus.gff3); do
 Strain=$(echo $BrakerGff| rev | cut -d '/' -f3 | rev | sed 's/_braker_new//g' | sed 's/_braker_pacbio//g')
 Organism=$(echo $BrakerGff | rev | cut -d '/' -f4 | rev)
@@ -723,13 +966,13 @@ Screen output detailing the progress of submission of interproscan jobs
 was redirected to a temporary output file named interproscan_submission.log .
 
 ```bash
-	screen -a
-	cd /home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides
-	ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/interproscan
-	for Genes in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
-	echo $Genes
-	$ProgDir/sub_interproscan.sh $Genes
-	done 2>&1 | tee -a interproscan_submisison.log
+screen -a
+cd /home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/interproscan
+for Genes in $(ls gene_pred/final/*/*/*/final_genes_combined.pep.fasta); do
+echo $Genes
+$ProgDir/sub_interproscan.sh $Genes
+done 2>&1 | tee -a interproscan_submisison.log
 ```
 
 Following interproscan annotation split files were combined using the following
@@ -764,14 +1007,14 @@ done
 ```
 
 ```bash
-	for SwissTable in $(ls gene_pred/swissprot/*/*/swissprot_v2015_10_hits.tbl); do
-		Strain=$(echo $SwissTable | rev | cut -f2 -d '/' | rev)
-		Organism=$(echo $SwissTable | rev | cut -f3 -d '/' | rev)
-		echo "$Organism - $Strain"
-		OutTable=gene_pred/swissprot/$Organism/$Strain/swissprot_vJul2016_tophit_parsed.tbl
-		ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swissprot
-		$ProgDir/swissprot_parser.py --blast_tbl $SwissTable --blast_db_fasta ../../uniprot/swissprot/uniprot_sprot.fasta > $OutTable
-	done
+for SwissTable in $(ls gene_pred/swissprot/*/*/swissprot_v2015_10_hits.tbl); do
+Strain=$(echo $SwissTable | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $SwissTable | rev | cut -f3 -d '/' | rev)
+echo "$Organism - $Strain"
+OutTable=gene_pred/swissprot/$Organism/$Strain/swissprot_vJul2016_tophit_parsed.tbl
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swissprot
+$ProgDir/swissprot_parser.py --blast_tbl $SwissTable --blast_db_fasta ../../uniprot/swissprot/uniprot_sprot.fasta > $OutTable
+done
 ```
 
 
@@ -800,25 +1043,25 @@ PHIbase. These commands were run as part of previous projects but have been
 included here for completeness.
 <!--
 ```bash
-	PhibaseDir=/home/groups/harrisonlab/phibase/v3.8
-	printf "header\n" > $PhibaseDir/PHI_headers.csv
-	cat $PhibaseDir/PHI_accessions.fa | grep '>' | cut -f1 | sed 's/>//g' | sed 's/\r//g' >> $PhibaseDir/PHI_headers.csv
-	printf "effect\n" > .$PhibaseDir/PHI_virulence.csv
-	cat $PhibaseDir/PHI_accessions.fa | grep '>' | cut -f1 | sed 's/>//g' | rev | cut -f1 -d '|' | rev  >> $PhibaseDir/PHI_virulence.csv
+PhibaseDir=/home/groups/harrisonlab/phibase/v3.8
+printf "header\n" > $PhibaseDir/PHI_headers.csv
+cat $PhibaseDir/PHI_accessions.fa | grep '>' | cut -f1 | sed 's/>//g' | sed 's/\r//g' >> $PhibaseDir/PHI_headers.csv
+printf "effect\n" > .$PhibaseDir/PHI_virulence.csv
+cat $PhibaseDir/PHI_accessions.fa | grep '>' | cut -f1 | sed 's/>//g' | rev | cut -f1 -d '|' | rev  >> $PhibaseDir/PHI_virulence.csv
 ```
 
 
 ```bash
-	PhibaseDir=/home/groups/harrisonlab/phibase/v3.8
-	PhibaseHeaders=$PhibaseDir/PHI_headers.csv
-	PhibaseVirulence=$PhibaseDir/PHI_virulence.csv
-	for BlastCSV in $(ls analysis/blast_homology/F*/*/*_PHI_36_accessions.fa_homologs.csv); do
-		Strain=$(echo $BlastCSV | rev | cut -f2 -d'/' | rev)
-		echo "$Strain"
-		OutDir=$(dirname $BlastCSV)
-		paste -d '\t' $PhibaseHeaders $PhibaseVirulence $BlastCSV | cut -f-3,1185- > $OutDir/"$Strain"_PHIbase_virulence.csv
-		cat $OutDir/"$Strain"_PHIbase_virulence.csv | grep 'NODE_' | cut -f2 | sort | uniq -c | tee $OutDir/"$Strain"_PHIbase_virulence.txt
-	done
+PhibaseDir=/home/groups/harrisonlab/phibase/v3.8
+PhibaseHeaders=$PhibaseDir/PHI_headers.csv
+PhibaseVirulence=$PhibaseDir/PHI_virulence.csv
+for BlastCSV in $(ls analysis/blast_homology/F*/*/*_PHI_36_accessions.fa_homologs.csv); do
+Strain=$(echo $BlastCSV | rev | cut -f2 -d'/' | rev)
+echo "$Strain"
+OutDir=$(dirname $BlastCSV)
+paste -d '\t' $PhibaseHeaders $PhibaseVirulence $BlastCSV | cut -f-3,1185- > $OutDir/"$Strain"_PHIbase_virulence.csv
+cat $OutDir/"$Strain"_PHIbase_virulence.csv | grep 'NODE_' | cut -f2 | sort | uniq -c | tee $OutDir/"$Strain"_PHIbase_virulence.txt
+done
 ```
 -->
 
