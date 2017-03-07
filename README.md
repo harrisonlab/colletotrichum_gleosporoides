@@ -40,17 +40,30 @@ Assembly of remaining reads
   Species=C.gloeosporioides
   Strain=CGMCC3_17371
   mkdir -p raw_dna/minion/$Species/$Strain/16-12-16
-  # poretools fastq $RawDatDir/ | gzip -cf > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.fastq.gz
+  poretools fastq $RawDatDir/ | gzip -cf > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.fastq.gz
   poretools stats $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.stats.txt
   poretools hist $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.hist
   RawDatDir=/home/miseq_data/minion/2016/minION-Stuart/Colletotrichum/downloaded/fail
   Species=C.gloeosporioides
   Strain=CGMCC3_17371
   mkdir -p raw_dna/minion/$Species/$Strain/16-12-16
-  # poretools fastq $RawDatDir/ | gzip -cf > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.fastq.gz
+  poretools fastq $RawDatDir/ | gzip -cf > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.fastq.gz
   poretools stats $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.stats.txt
   poretools hist $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.hist
   cat raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16.fastq.gz raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_fail.fastq.gz > raw_dna/minion/$Species/$Strain/"$Strain"_16-12-16_pass-fail.fastq.gz
+  # Oxford nanopore 07/03/17
+  RawDatDir=/home/miseq_data/minion/2017/Colletotrichum-2/downloaded/pass
+  Species=C.gloeosporioides
+  Strain=CGMCC3_17371
+  Date=07-03-17
+  mkdir -p raw_dna/minion/$Species/$Strain/$Date
+  for Fast5Dir in $(ls -d $RawDatDir/*); do
+    poretools fastq $Fast5Dir | gzip -cf
+  done > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.fastq.gz
+  mv raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.fastq.gz raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_pass.fastq.gz
+  # poretools stats $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.stats.txt
+  # poretools hist $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.hist
+  # cat raw_dna/minion/$Species/$Strain/"$Strain"_"$Date".fastq.gz raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.fastq.gz > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_pass-fail.fastq.gz
 ```
 
 Pass nanopore data:
@@ -204,9 +217,11 @@ Quast
   Reads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16.fastq.gz)
   GenomeSz="57m"
   Prefix="$Strain"
-  OutDir="assembly/canu-1.4/$Organism/$Strain"
+  # OutDir="assembly/canu-1.4/$Organism/$Strain"
+  OutDir=assembly/canu-1.4/$Organism/"$Strain"_nanopore
   ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/canu
-  qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
+  # qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
+  qsub $ProgDir/submit_canu_minion.sh $Reads $GenomeSz $Prefix $OutDir
 ```
 Canu assembly was also run using the failed reads:
 
@@ -348,15 +363,33 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
   # for PacBioAssembly in $(ls assembly/canu/*/*/polished/pilon.fasta); do
     # Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
     # Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
-  for PacBioAssembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371.contigs.fasta); do
+for PacBioAssembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371.contigs.fasta); do
+Organism=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
+Strain=$(echo $PacBioAssembly | rev | cut -f2 -d '/' | rev)
+HybridAssembly=$(ls assembly/spades_pacbio/C.gloeosporioides/CGMCC3_17371/contigs.fasta)
+OutDir=assembly/merged_canu_spades/$Organism/$Strain
+AnchorLength=500000
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
+qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir $AnchorLength
+done
+```
+
+```bash
+  # for PacBioAssembly in $(ls assembly/canu/*/*/polished/pilon.fasta); do
+    # Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
+    # Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
+  for PacBioAssembly in $(ls assembly/canu/P.cactorum/414*/414_canu.contigs.fasta | grep '_4'); do
     Organism=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
     Strain=$(echo $PacBioAssembly | rev | cut -f2 -d '/' | rev)
-    HybridAssembly=$(ls assembly/spades_pacbio/C.gloeosporioides/CGMCC3_17371/contigs.fasta)
+    # HybridAssembly=$(ls assembly/spades_pacbio/$Organism/$Strain/contigs.fasta)
+    HybridAssembly=$(ls assembly/spades_pacbio/P.cactorum/414_4/contigs.fasta)
     OutDir=assembly/merged_canu_spades/$Organism/$Strain
+    AnchorLength=500000
     ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
-    qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir
+    qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir $AnchorLength
   done
 ```
+
 <!--
 This merged assembly was polished using Pilon
 
