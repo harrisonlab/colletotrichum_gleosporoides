@@ -59,8 +59,7 @@ Assembly of remaining reads
   mkdir -p raw_dna/minion/$Species/$Strain/$Date
   for Fast5Dir in $(ls -d $RawDatDir/*); do
     poretools fastq $Fast5Dir | gzip -cf
-  done > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.fastq.gz
-  mv raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.fastq.gz raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_pass.fastq.gz
+  done > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_pass.fastq.gz
   # poretools stats $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.stats.txt
   # poretools hist $RawDatDir/ > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.hist
   # cat raw_dna/minion/$Species/$Strain/"$Strain"_"$Date".fastq.gz raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_fail.fastq.gz > raw_dna/minion/$Species/$Strain/"$Strain"_"$Date"_pass-fail.fastq.gz
@@ -169,8 +168,7 @@ commands:
   done
 ```
 
-
-Data quality was also visualised for minion data using fastqc:
+<!-- Data quality was also visualised for minion data using fastqc:
 
 ```bash
   for RawData in $(ls raw_dna/minion/*/*/*.fastq.gz); do
@@ -178,7 +176,7 @@ Data quality was also visualised for minion data using fastqc:
     echo $RawData
     qsub $ProgDir/run_fastqc.sh $RawData
   done
-```
+``` -->
 
 # Assembly
 <!--
@@ -214,15 +212,17 @@ Quast
 ```bash
   Organism=C.gloeosporioides
   Strain=CGMCC3_17371
-  Reads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16.fastq.gz)
+  Run1=$(ls raw_dna/minion/$Organism/$Strain/CGMCC3_17371_16-12-16.fastq.gz)
+  Run2=$(ls raw_dna/minion/$Organism/$Strain/CGMCC3_17371_07-03-17_pass.fastq.gz)
   GenomeSz="57m"
   Prefix="$Strain"
   # OutDir="assembly/canu-1.4/$Organism/$Strain"
   OutDir=assembly/canu-1.4/$Organism/"$Strain"_nanopore
   ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/canu
   # qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
-  qsub $ProgDir/submit_canu_minion.sh $Reads $GenomeSz $Prefix $OutDir
+  qsub $ProgDir/submit_canu_minion_2lib.sh $Run1 $Run2 $GenomeSz $Prefix $OutDir
 ```
+<!--
 Canu assembly was also run using the failed reads:
 
 ```bash
@@ -234,7 +234,7 @@ Canu assembly was also run using the failed reads:
   OutDir="assembly/canu-1.4/$Organism/$Strain"_pass-fail
   ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/canu
   qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
-```
+``` -->
 
 ### Quast
 
@@ -298,7 +298,7 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
 ```
 
 Hybrid assembly was also performed using failed Minion reads:
-
+<!--
 ```bash
 Organism=C.gloeosporioides
 Strain=CGMCC3_17371
@@ -316,7 +316,7 @@ CoverageCuttoff=35
 OutDir=assembly/spades_pacbio/$Organism/"$Strain"_73x_pass-fail
 qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir $CoverageCuttoff
 ```
-
+ -->
 ### Quast
 
 ```bash
