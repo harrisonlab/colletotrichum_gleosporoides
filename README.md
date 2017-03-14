@@ -222,19 +222,7 @@ Quast
   # qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
   qsub $ProgDir/submit_canu_minion_2lib.sh $Run1 $Run2 $GenomeSz $Prefix $OutDir
 ```
-<!--
-Canu assembly was also run using the failed reads:
 
-```bash
-  Organism=C.gloeosporioides
-  Strain=CGMCC3_17371
-  Reads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16_pass-fail.fastq.gz)
-  GenomeSz="57m"
-  Prefix="$Strain"
-  OutDir="assembly/canu-1.4/$Organism/$Strain"_pass-fail
-  ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/canu
-  qsub $ProgDir/submit_canu.sh $Reads $GenomeSz $Prefix $OutDir
-``` -->
 
 ### Quast
 
@@ -252,15 +240,23 @@ done
 Assemblies were polished using Pilon
 
 ```bash
-  for Assembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371*/CGMCC3_17371.contigs.fasta); do
+  for Assembly in $(ls assembly/canu-1.4/*/*/*.contigs.fasta); do
     Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
-    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev | sed 's/_pass-fail//g' | sed 's/_73x//g')
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
     IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
-    TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
-    TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
-    OutDir=$(dirname $Assembly)
+    echo $Strain
+    echo $Organism
+    TrimF1_Read=$(ls $IlluminaDir/F/*_trim.fq.gz | head -n1 | tail -n1);
+    TrimR1_Read=$(ls $IlluminaDir/R/*_trim.fq.gz | head -n1 | tail -n1);
+    TrimF2_Read=$(ls $IlluminaDir/F/*_trim.fq.gz | head -n2 | tail -n1);
+    TrimR2_Read=$(ls $IlluminaDir/R/*_trim.fq.gz | head -n2 | tail -n1);
+    echo $TrimF1_Read
+    echo $TrimR1_Read
+    echo $TrimF2_Read
+    echo $TrimR2_Read
+    OutDir=assembly/canu-1.4/$Organism/$Strain/polished
     ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
-    qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir/pilon
+    qsub $ProgDir/sub_pilon_2_libs.sh $Assembly $TrimF1_Read $TrimR1_Read $TrimF2_Read $TrimR2_Read $OutDir
   done
 ```
 
@@ -282,49 +278,32 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
 ```bash
   Organism=C.gloeosporioides
   Strain=CGMCC3_17371
-  MinionReads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16.fastq.gz)
+  MinionReads_1=$(ls raw_dna/minion/$Organism/$Strain/*.fastq.gz | grep -v 'fail' | head -n1 | tail -n1)
+  MinionReads_2=$(ls raw_dna/minion/$Organism/$Strain/*.fastq.gz | grep -v 'fail' | head -n2 | tail -n1)
   IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
   TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
   TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
-  OutDir=assembly/spades_pacbio/$Organism/"$Strain"
+  echo $MinionReads_1
+  echo $MinionReads_2
   echo $TrimR1_Read
   echo $TrimR1_Read
-  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades
-  qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir
+  OutDir=assembly/spades_minion/$Organism/"$Strain"
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades/multiple_libraries
+  qsub $ProgDir/subSpades_minion_2lib.sh $MinionReads_1 $MinionReads_2 $TrimF1_Read $TrimR1_Read $OutDir
   # Coverage cuttoff could be set at 73/2 where 73 is the assumed coverage
-  CoverageCuttoff=35
-  OutDir=assembly/spades_pacbio/$Organism/"$Strain"_73x
-  qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir $CoverageCuttoff
+  # CoverageCuttoff=35
+  # OutDir=assembly/spades_pacbio/$Organism/"$Strain"_73x
+  # qsub $ProgDir/sub_spades_minion_2lib.sh $MinionReads_1 $MinionReads_2 $TrimF1_Read $TrimR1_Read $OutDir $CoverageCuttoff
 ```
 
-Hybrid assembly was also performed using failed Minion reads:
-<!--
-```bash
-Organism=C.gloeosporioides
-Strain=CGMCC3_17371
-MinionReads=$(ls raw_dna/minion/$Organism/$Strain/"$Strain"_16-12-16_pass-fail.fastq.gz)
-IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
-TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
-TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
-OutDir=assembly/spades_pacbio/$Organism/"$Strain"_pass-fail
-echo $TrimR1_Read
-echo $TrimR1_Read
-ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades
-qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir
-# Coverage cuttoff could be set at 73/2 where 73 is the assumed coverage
-CoverageCuttoff=35
-OutDir=assembly/spades_pacbio/$Organism/"$Strain"_73x_pass-fail
-qsub $ProgDir/sub_spades_pacbio.sh $MinionReads $TrimF1_Read $TrimR1_Read $OutDir $CoverageCuttoff
-```
- -->
 ### Quast
 
 ```bash
   ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
-  for Assembly in $(ls assembly/spades_pacbio/C.gloeosporioides/CGMCC3_17371*/scaffolds.fasta); do
+  for Assembly in $(ls assembly/spades_minion/C.gloeosporioides/CGMCC3_17371*/contigs.fasta); do
     Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
     Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
-    OutDir=assembly/spades_pacbio/$Organism/$Strain/filtered_contigs
+    OutDir=($dirname $Assembly)
     qsub $ProgDir/sub_quast.sh $Assembly $OutDir
   done
 ```
@@ -360,77 +339,63 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
 ## Merging pacbio and hybrid assemblies
 
 ```bash
-  # for PacBioAssembly in $(ls assembly/canu/*/*/polished/pilon.fasta); do
-    # Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
-    # Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
-for PacBioAssembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371.contigs.fasta); do
-Organism=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
-Strain=$(echo $PacBioAssembly | rev | cut -f2 -d '/' | rev)
-HybridAssembly=$(ls assembly/spades_pacbio/C.gloeosporioides/CGMCC3_17371/contigs.fasta)
-OutDir=assembly/merged_canu_spades/$Organism/$Strain
-AnchorLength=500000
-ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
-qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir $AnchorLength
+  for PacBioAssembly in $(ls assembly/canu-1.4/*/*/polished/*.fasta); do
+    Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
+    Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
+    HybridAssembly=$(ls assembly/spades_*/$Organism/$Strain/contigs.fasta | grep 'minion')
+    OutDir=assembly/merged_canu_spades/$Organism/"$Strain"_spades_first
+    AnchorLength=500000
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
+    qsub $ProgDir/sub_quickmerge.sh $HybridAssembly $PacBioAssembly $OutDir $AnchorLength
+  done
+```
+
+### Quast
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta); do
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+OutDir=$(dirname $Assembly)
+qsub $ProgDir/sub_quast.sh $Assembly $OutDir
 done
 ```
 
-```bash
-  # for PacBioAssembly in $(ls assembly/canu/*/*/polished/pilon.fasta); do
-    # Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
-    # Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
-  for PacBioAssembly in $(ls assembly/canu/P.cactorum/414*/414_canu.contigs.fasta | grep '_4'); do
-    Organism=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
-    Strain=$(echo $PacBioAssembly | rev | cut -f2 -d '/' | rev)
-    # HybridAssembly=$(ls assembly/spades_pacbio/$Organism/$Strain/contigs.fasta)
-    HybridAssembly=$(ls assembly/spades_pacbio/P.cactorum/414_4/contigs.fasta)
-    OutDir=assembly/merged_canu_spades/$Organism/$Strain
-    AnchorLength=500000
-    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
-    qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir $AnchorLength
-  done
-```
 
-<!--
 This merged assembly was polished using Pilon
 
 ```bash
-  for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta); do
-    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
-    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
-    IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
-    TrimF1_Read=$(ls $IlluminaDir/F/414_run1_F_trim.fq.gz);
-    TrimR1_Read=$(ls $IlluminaDir/R/414_run1_R_trim.fq.gz);
-    OutDir=assembly/merged_canu_spades/$Organism/$Strain/polished
-    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
-    qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir
-  done
+for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta | grep 'spades_first'); do
+Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev | cut -f1 -d '_')
+IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+echo $Strain
+echo $Organism
+TrimF1_Read=$(ls $IlluminaDir/F/*_trim.fq.gz | head -n3 | tail -n1);
+TrimR1_Read=$(ls $IlluminaDir/R/*_trim.fq.gz | head -n3 | tail -n1);
+OutDir=$(dirname $Assembly)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
+qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir/polished
+done
 ```
 
-Contigs were renamed in accordance with ncbi recomendations.
+<!--
+Contigs were renamed in accordance with ncbi recomendations
 
 ```bash
+  ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/remove_contaminants
   touch tmp.csv
+  # printf "contig_17\tsplit\t780978\t780971\tcanu:missassembly\n"
   for Assembly in $(ls assembly/merged_canu_spades/*/*/polished/pilon.fasta); do
-    Strain=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
     Organism=$(echo $Assembly | rev | cut -f4 -d '/' | rev)  
-    OutDir=assembly/merged_canu_spades/$Organism/$Strain/filtered_contigs
-    ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/remove_contaminants
-    $ProgDir/remove_contaminants.py --inp $Assembly --out $OutDir/contigs_min_500bp_renamed.fasta --coord_file tmp.csv
+    Strain=$(echo $Assembly | rev | cut -f3 -d '/' | rev | cut -f1 -d '_')
+    OutDir=$(dirname $Assembly)
+    $ProgDir/remove_contaminants.py --inp $Assembly --out $OutDir/"$Strain"_contigs_renamed.fasta --coord_file tmp.csv
   done
   rm tmp.csv
-```
-
-Quast
-
-```bash
-  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
-  for Assembly in $(ls assembly/merged_canu_spades/*/*/filtered_contigs/contigs_min_500bp_renamed.fasta); do
-    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
-    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
-    OutDir=assembly/merged_canu_spades/$Organism/$Strain/filtered_contigs
-    qsub $ProgDir/sub_quast.sh $Assembly $OutDir
-  done
 ``` -->
+
 
 
 # Repeatmasking
