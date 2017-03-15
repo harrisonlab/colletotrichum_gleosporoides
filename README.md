@@ -240,9 +240,9 @@ done
 Assemblies were polished using Pilon
 
 ```bash
-  for Assembly in $(ls assembly/canu-1.4/*/*/*.contigs.fasta); do
+  for Assembly in $(ls assembly/canu-1.4/*/*/*.contigs.fasta | grep 'nanopore'); do
     Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
-    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev | sed 's/_nanopore//g')
     IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
     echo $Strain
     echo $Organism
@@ -254,7 +254,8 @@ Assemblies were polished using Pilon
     echo $TrimR1_Read
     echo $TrimF2_Read
     echo $TrimR2_Read
-    OutDir=assembly/canu-1.4/$Organism/$Strain/polished
+    InDir=Dir=$(dirname $Assembly)
+    OutDir=$InDir/polished
     ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
     qsub $ProgDir/sub_pilon_2_libs.sh $Assembly $TrimF1_Read $TrimR1_Read $TrimF2_Read $TrimR2_Read $OutDir
   done
