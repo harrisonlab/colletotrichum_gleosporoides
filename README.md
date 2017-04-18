@@ -554,9 +554,22 @@ done
 
 ```bash
   for File in $(ls gene_pred/busco/*/*/assembly/*/short_summary_*.txt); do  
-    echo $File;
-    cat $File | grep -e '(C)' -e 'Total';
+  Strain=$(echo $File| rev | cut -d '/' -f4 | rev)
+  Organism=$(echo $File | rev | cut -d '/' -f5 | rev)
+  Complete=$(cat $File | grep "(C)" | cut -f2)
+  Fragmented=$(cat $File | grep "(F)" | cut -f2)
+  Missing=$(cat $File | grep "(M)" | cut -f2)
+  Total=$(cat $File | grep "Total" | cut -f2)
+  echo -e "$Organism\t$Strain\t$Complete\t$Fragmented\t$Missing\t$Total"
   done
+```
+
+Results (top is illumina only assembly)
+```
+  C.gloeosporioides	CGMCC3_17371	3690	19	16	3725
+  C.gloeosporioides	CGMCC3_17371_pacbio_first	3606	27	92	3725
+  C.gloeosporioides	CGMCC3_17371_spades_first	3535	25	165	3725
+  C.gloeosporioides	Nara_gc5	3204	316	205	3725
 ```
 
 
