@@ -227,13 +227,13 @@ Quast
 ### Quast
 
 ```bash
-ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
-for Assembly in $(ls assembly/canu-1.4/C.gloeosporioides/CGMCC3_17371*/CGMCC3_17371.contigs.fasta); do
-Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
-Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
-OutDir=assembly/canu-1.4/$Organism/$Strain/filtered_contigs
-qsub $ProgDir/sub_quast.sh $Assembly $OutDir
-done
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+  for Assembly in $(ls assembly/canu-1.4/*/*/*.contigs.fasta | grep 'nanopore'); do
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+    OutDir=$(dirname $Assembly)
+    qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+  done
 ```
 
 
@@ -254,7 +254,7 @@ Assemblies were polished using Pilon
     echo $TrimR1_Read
     echo $TrimF2_Read
     echo $TrimR2_Read
-    InDir=Dir=$(dirname $Assembly)
+    InDir=$(dirname $Assembly)
     OutDir=$InDir/polished
     ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
     qsub $ProgDir/sub_pilon_2_libs.sh $Assembly $TrimF1_Read $TrimR1_Read $TrimF2_Read $TrimR2_Read $OutDir
@@ -340,9 +340,35 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
 ## Merging pacbio and hybrid assemblies
 
 ```bash
-  for PacBioAssembly in $(ls assembly/canu-1.4/*/*/polished/*.fasta); do
+  for PacBioAssembly in $(ls assembly/canu-1.4/*/*/polished/*.fasta | grep 'nanopore'); do
     Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
-    Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev)
+    Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev | sed 's/_nanopore//g')
+    echo "$Organism - $Strain"
+    HybridAssembly=$(ls assembly/spades_*/$Organism/$Strain/contigs.fasta | grep 'minion')
+    OutDir=assembly/merged_canu_spades/$Organism/"$Strain"_pacbio_first
+    AnchorLength=500000
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/quickmerge
+    qsub $ProgDir/sub_quickmerge.sh $PacBioAssembly $HybridAssembly $OutDir $AnchorLength
+  done
+```
+
+### Quast
+
+```bash
+  ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+  for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta | grep '_pacbio_first'); do
+    Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+    Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+    OutDir=$(dirname $Assembly)
+    qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+  done
+```
+
+```bash
+  for PacBioAssembly in $(ls assembly/canu-1.4/*/*/polished/*.fasta | grep 'nanopore'); do
+    Organism=$(echo $PacBioAssembly | rev | cut -f4 -d '/' | rev)
+    Strain=$(echo $PacBioAssembly | rev | cut -f3 -d '/' | rev | sed 's/_nanopore//g')
+    echo "$Organism - $Strain"
     HybridAssembly=$(ls assembly/spades_*/$Organism/$Strain/contigs.fasta | grep 'minion')
     OutDir=assembly/merged_canu_spades/$Organism/"$Strain"_spades_first
     AnchorLength=500000
@@ -355,7 +381,7 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
 
 ```bash
 ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
-for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta); do
+for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta | grep 'spades_first'); do
 Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
 Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
 OutDir=$(dirname $Assembly)
@@ -367,9 +393,9 @@ done
 This merged assembly was polished using Pilon
 
 ```bash
-for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta | grep 'spades_first'); do
+for Assembly in $(ls assembly/merged_canu_spades/*/*/merged.fasta | grep -e 'pacbio_first' -e 'spades_first'); do
 Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
-Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev | cut -f1 -d '_')
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev | sed 's/_spades_first//g' | sed 's/_pacbio_first//g')
 IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
 echo $Strain
 echo $Organism
@@ -380,6 +406,9 @@ ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
 qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir/polished
 done
 ```
+
+The spades first assembly was selected for further work based upon quast results and upon
+results of busco (commands below).
 
 <!--
 Contigs were renamed in accordance with ncbi recomendations
@@ -409,7 +438,7 @@ The best assemblies were used to perform repeatmasking
 
 ```bash
 ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/repeat_masking
-for BestAss in $(ls assembly/spades/*/*/filtered_contigs/contigs_min_500bp.fasta); do
+for BestAss in $(ls assembly/merged_canu_spades/*/*/polished/pilon.fasta | grep -e 'pacbio_first'); do
 Strain=$(echo $BestAss | rev | cut -f3 -d '/' | rev)
 Organism=$(echo $BestAss | rev | cut -f4 -d '/' | rev)
 OutDir=repeat_masked/$Organism/"$Strain"/first_assembly
@@ -487,6 +516,7 @@ Gene prediction
 # Pre-gene prediction
 
 Quality of genome assemblies was assessed by looking for the gene space in the assemblies.
+<!--
 ```bash
 ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/cegma
 for Genome in $(ls assembly/spades/*/*/filtered_contigs/contigs_min_500bp.fasta); do
@@ -505,6 +535,28 @@ cat $File | head -n18 | tail -n+4;printf "\n";
 done > gene_pred/cegma/cegma_results_dna_summary.txt
 
 less gene_pred/cegma/cegma_results_dna_summary.txt
+```
+-->
+
+```bash
+#for Assembly in  $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa); do
+for Assembly in  $(ls assembly/merged_canu_spades/C.gloeosporioides/CGMCC3_17371_*_first/polished/pilon.fasta); do
+  Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+  Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+  echo "$Organism - $Strain"
+  ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/busco
+  # BuscoDB="Fungal"
+  BuscoDB=$(ls -d /home/groups/harrisonlab/dbBusco/sordariomyceta_odb9)
+  OutDir=gene_pred/busco/$Organism/$Strain/assembly
+  qsub $ProgDir/sub_busco2.sh $Assembly $BuscoDB $OutDir
+done
+```
+
+```bash
+  for File in $(ls gene_pred/busco/*/*/assembly/*/short_summary_*.txt); do  
+    echo $File;
+    cat $File | grep -e '(C)' -e 'Total';
+  done
 ```
 
 
