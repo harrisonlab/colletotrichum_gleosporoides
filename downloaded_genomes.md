@@ -64,3 +64,17 @@ The best assemblies were used to perform repeatmasking
     qsub $ProgDir/transposonPSI.sh $BestAss $OutDir
   done
 ```
+
+
+```bash
+for Assembly in  $(ls assembly/external_group/*/*/*/ANPB01.1.fsa_nt); do
+  Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+  Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+  echo "$Organism - $Strain"
+  ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/busco
+  # BuscoDB="Fungal"
+  BuscoDB=$(ls -d /home/groups/harrisonlab/dbBusco/sordariomyceta_odb9)
+  OutDir=gene_pred/busco/$Organism/$Strain/assembly
+  qsub $ProgDir/sub_busco2.sh $Assembly $BuscoDB $OutDir
+done
+```
