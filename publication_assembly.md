@@ -247,3 +247,22 @@ done
   ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/spades/multiple_libraries
   qsub $ProgDir/subSpades_minion_2lib.sh $MinionReads_1 $MinionReads_2 $TrimF1_Read $TrimR1_Read $OutDir
 ```
+
+
+Quast and busco were run to assess assembly quality:
+
+```bash
+for Assembly in $(ls assembly/spades-3.11_minion/C.gloeosporioides/CGMCC3_17371*/contigs.fasta); do
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+# Quast
+OutDir=$(dirname $Assembly)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+# Busco
+BuscoDB=$(ls -d /home/groups/harrisonlab/dbBusco/sordariomyceta_odb9)
+OutDir=gene_pred/busco/$Organism/$Strain/assembly
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/busco
+qsub $ProgDir/sub_busco3.sh $Assembly $BuscoDB $OutDir
+done
+```
