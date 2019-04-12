@@ -79,6 +79,38 @@ This equates to ~ 5.5X coverage, assuming a 57Mb genome
   N75	4054
 ```
 
+
+## Estimating sequencing coverage
+
+For Minion data:
+```bash
+for RawData in $(ls qc_dna/minion/*/*/*q.gz); do
+echo $RawData;
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/dna_qc;
+GenomeSz=57
+OutDir=$(dirname $RawData)
+mkdir -p $OutDir
+qsub $ProgDir/sub_count_nuc.sh $GenomeSz $RawData $OutDir
+done
+```
+
+```bash
+  for StrainDir in $(ls -d qc_dna/minion/*/*); do
+    Strain=$(basename $StrainDir)
+    printf "$Strain\t"
+    for File in $(ls $StrainDir/*_cov.txt); do
+      echo $(basename $File);
+      cat $File | tail -n1 | rev | cut -f2 -d ' ' | rev;
+    done | grep -v '.txt' | awk '{ SUM += $1} END { print SUM }'
+  done
+```
+
+MinION coverage
+
+```
+CGMCC3_17371	13.76
+```
+
 #Data qc
 
 programs:
@@ -254,6 +286,23 @@ Quast
   qsub $ProgDir/submit_canu_minion_2lib.sh $Reads1 $Reads2 $GenomeSz $Prefix $OutDir
 ```
 
+```
+Assembly                   CGMCC3_17371.contigs  CGMCC3_17371.contigs broken
+# contigs (>= 0 bp)        222                   222                        
+# contigs (>= 1000 bp)     222                   222                        
+Total length (>= 0 bp)     56590160              56590160                   
+Total length (>= 1000 bp)  56590160              56590160                   
+# contigs                  222                   222                        
+Largest contig             1650251               1650251                    
+Total length               56590160              56590160                   
+GC (%)                     53.18                 53.18                      
+N50                        427010                427010                     
+N75                        247951                247951                     
+L50                        37                    37                         
+L75                        79                    79                         
+# N's per 100 kbp          0.00                  0.00
+```
+
 
 ### Quast
 
@@ -405,6 +454,23 @@ Inspection of flagged regions didn't identify any contigs that needed to be brok
   done
 ```
 
+```
+Assembly                   contigs   contigs broken
+# contigs (>= 0 bp)        1102      1102          
+# contigs (>= 1000 bp)     395       395           
+Total length (>= 0 bp)     58404594  58404594      
+Total length (>= 1000 bp)  58173228  58173228      
+# contigs                  526       526           
+Largest contig             1645888   1645888       
+Total length               58267987  58267987      
+GC (%)                     53.19     53.19         
+N50                        533188    533188        
+N75                        241900    241900        
+L50                        32        32            
+L75                        73        73            
+# N's per 100 kbp          0.00      0.00
+```
+
 ```bash
 for Assembly in $(ls assembly/spades_minion_new/C.gloeosporioides/CGMCC3_17371*/contigs.fasta); do
 Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
@@ -533,6 +599,7 @@ done
 The spades first assembly was selected for further work based upon quast results and upon
 results of busco (commands below).
 
+
 <!--
 Contigs were renamed in accordance with ncbi recomendations
 
@@ -624,6 +691,21 @@ The number of bases masked by TransposonPSI:	195889
 The total number of masked bases are:	933627
 ```
 
+## KAT kmer spectra analysis
+
+```bash
+  for Assembly in $(ls repeat_masked/*/*/*/*_contigs_unmasked.fa | grep -v 'Nara'); do
+    Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev | sed 's/_pacbio_first//g')
+    Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+    echo "$Organism - $Strain"
+    ReadsF=$(ls qc_dna/paired/$Organism/$Strain/F/*_trim.fq.gz)
+    ReadsR=$(ls qc_dna/paired/$Organism/$Strain/R/*_trim.fq.gz)
+    OutDir=$(dirname $Assembly)/kat
+    Prefix="repeat_masked"
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/kat
+    qsub $ProgDir/sub_kat.sh $Assembly $ReadsF $ReadsR $OutDir $Prefix 300
+  done
+```
 
 # Gene Prediction
 
