@@ -216,6 +216,7 @@ done
 
 ### Assembbly using SMARTdenovo
 
+<!--
 ```bash
 for CorrectedReads in $(ls assembly/canu-1.8/*/*/*.trimmedReads.fasta.gz); do
 Organism=$(echo $CorrectedReads | rev | cut -f3 -d '/' | rev)
@@ -226,6 +227,75 @@ ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/SMARTdenovo
 qsub $ProgDir/sub_SMARTdenovo.sh $CorrectedReads $Prefix $OutDir
 done
 ```
+-->
+
+While logged in to the new cluster:
+
+```bash
+WorkDir=$HOME/tmp/smartdenovo_Cg
+
+
+# ---------------
+# Step 1
+# Collect inputs
+# ---------------
+
+ProjDir=/oldhpc/home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides
+FastaIn=$(ls $ProjDir/assembly/canu-1.8/*/*/*.trimmedReads.fasta.gz)
+Organism=$(echo $FastaIn | rev | cut -f3 -d '/' | rev)
+Strain=$(echo $FastaIn | rev | cut -f2 -d '/' | rev)
+Prefix="$Strain"_smartdenovo
+OutDir=$ProjDir/assembly/SMARTdenovo/$Organism/"$Strain"
+echo  "Running SMARTdenovo with the following inputs:"
+echo "FastaIn - $FastaIn"
+echo "Prefix - $Prefix"
+echo "OutDir - $OutDir"
+
+# ---------------
+# Step 2
+# Run SMARTdenovo
+# ---------------
+
+mkdir -p $WorkDir
+cd $WorkDir
+Fasta=$(basename $FastaIn)
+cp $FastaIn $Fasta
+
+cat $Fasta | gunzip -cf > reads.fa
+smartdenovo.pl -t 40 reads.fa -p $Prefix > $Prefix.mak
+
+make -f $Prefix.mak 2>&1 | tee "$Prefix"_run_log.txt
+
+rm $Prefix.mak
+rm $Fasta
+rm reads.fa
+mkdir -p $OutDir
+for File in $(ls $WorkDir/wtasm*); do
+  NewName=$(echo $File | sed "s/wtasm/$Prefix/g")
+  mv $File $NewName
+done
+cp -r $WorkDir/* $OutDir/.
+rm -r $WorkDir
+```
+
+Quast and busco were run to assess assembly quality:
+
+```bash
+for Assembly in $(ls assembly/SMARTdenovo/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_smartdenovo.dmo.lay.utg); do
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)  
+# Quast
+OutDir=$(dirname $Assembly)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+# Busco
+BuscoDB=$(ls -d /home/groups/harrisonlab/dbBusco/sordariomyceta_odb9)
+OutDir=gene_pred/busco/$Organism/$Strain/assembly
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/busco
+qsub $ProgDir/sub_busco3.sh $Assembly $BuscoDB $OutDir
+done
+```
+
 
 ### Hybrid assembly:
 
@@ -265,4 +335,123 @@ OutDir=gene_pred/busco/$Organism/$Strain/assembly
 ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/busco
 qsub $ProgDir/sub_busco3.sh $Assembly $BuscoDB $OutDir
 done
+```
+
+```bash
+printf "Filename\tComplete\tDuplicated\tFragmented\tMissing\tTotal\n"
+for File in $(ls gene_pred/busco/*/*/assembly/*/short_summary_*.txt | grep -e 'canu-1.8' -e '_contigs.txt'); do
+FileName=$(basename $File)
+Complete=$(cat $File | grep "(C)" | cut -f2)
+Duplicated=$(cat $File | grep "(D)" | cut -f2)
+Fragmented=$(cat $File | grep "(F)" | cut -f2)
+Missing=$(cat $File | grep "(M)" | cut -f2)
+Total=$(cat $File | grep "Total" | cut -f2)
+printf "$FileName\t$Complete\t$Duplicated\t$Fragmented\t$Missing\t$Total\n"
+done
+```
+
+```
+  short_summary_CGMCC3_17371.contigs.txt	325	0	337	3063	3725
+  short_summary_contigs.txt	3685	6	21	19	3725
+```
+
+## KAT kmer spectra analysis
+
+Kat was run on the hybrid assembly:
+
+```bash
+  for Assembly in $(ls assembly/spades-3.11_minion/C.gloeosporioides/CGMCC3_17371*/contigs.fasta); do
+    Strain=$(echo $Assembly| rev | cut -d '/' -f2 | rev)
+    Organism=$(echo $Assembly | rev | cut -d '/' -f3 | rev)
+    echo "$Organism - $Strain"
+    ReadsF=$(ls qc_dna/paired/$Organism/$Strain/F/*_trim.fq.gz)
+    ReadsR=$(ls qc_dna/paired/$Organism/$Strain/R/*_trim.fq.gz)
+    OutDir=$(dirname $Assembly)/kat
+    Prefix="repeat_masked"
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/kat
+    qsub $ProgDir/sub_kat.sh $Assembly $ReadsF $ReadsR $OutDir $Prefix 250
+  done
+```
+
+
+### Pilon assembly correction
+
+Assemblies were polished using Pilon
+
+```bash
+for Assembly in $(ls assembly/spades-3.11_minion/C.gloeosporioides/CGMCC3_17371*/contigs.fasta); do
+Organism=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+Strain=$(echo $Assembly | rev | cut -f2 -d '/' | rev)
+echo "$Organism - $Strain"
+IlluminaDir=$(ls -d qc_dna/paired/$Organism/$Strain)
+TrimF1_Read=$(ls $IlluminaDir/F/*.fq.gz);
+TrimR1_Read=$(ls $IlluminaDir/R/*.fq.gz);
+OutDir=$(dirname $Assembly)/pilon
+Iterations=5
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/pilon
+qsub $ProgDir/sub_pilon.sh $Assembly $TrimF1_Read $TrimR1_Read $OutDir $Iterations
+done
+```
+
+Contigs were renamed
+```bash
+echo "" > tmp.txt
+for Assembly in $(ls assembly/spades-3.11_minion/*/*/pilon/*.fasta | grep 'pilon_5'); do
+OutDir=$(dirname $Assembly)
+ProgDir=~/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/remove_contaminants
+$ProgDir/remove_contaminants.py --keep_mitochondria --inp $Assembly --out $OutDir/pilon_min_500bp_renamed.fasta --coord_file tmp.txt > $OutDir/log.txt
+done
+```
+
+Quast and busco were run to assess assembly quality:
+
+```bash
+for Assembly in $(ls assembly/spades-3.11_minion/C.gloeosporioides/CGMCC3_17371*/pilon/pilon_min_500bp_renamed.fasta); do
+Strain=$(echo $Assembly | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Assembly | rev | cut -f4 -d '/' | rev)  
+# Quast
+OutDir=$(dirname $Assembly)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/quast
+qsub $ProgDir/sub_quast.sh $Assembly $OutDir
+# Busco
+BuscoDB=$(ls -d /home/groups/harrisonlab/dbBusco/sordariomyceta_odb9)
+OutDir=gene_pred/busco/$Organism/$Strain/assembly
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/busco
+qsub $ProgDir/sub_busco3.sh $Assembly $BuscoDB $OutDir
+done
+```
+
+```bash
+printf "Filename\tComplete\tDuplicated\tFragmented\tMissing\tTotal\n"
+for File in $(ls gene_pred/busco/*/*/assembly/*/short_summary_*.txt | grep -e 'pilon_min_500bp_renamed'); do
+FileName=$(basename $File)
+Complete=$(cat $File | grep "(C)" | cut -f2)
+Duplicated=$(cat $File | grep "(D)" | cut -f2)
+Fragmented=$(cat $File | grep "(F)" | cut -f2)
+Missing=$(cat $File | grep "(M)" | cut -f2)
+Total=$(cat $File | grep "Total" | cut -f2)
+printf "$FileName\t$Complete\t$Duplicated\t$Fragmented\t$Missing\t$Total\n"
+done
+```
+
+```
+short_summary_pilon_min_500bp_renamed.txt	3686	6	21	18	3725
+```
+
+## KAT kmer spectra analysis
+
+Kat was run on the hybrid assembly:
+
+```bash
+  for Assembly in $(ls assembly/spades-3.11_minion/C.gloeosporioides/CGMCC3_17371*/pilon/pilon_min_500bp_renamed.fasta); do
+    Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+    Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+    echo "$Organism - $Strain"
+    ReadsF=$(ls qc_dna/paired/$Organism/$Strain/F/*_trim.fq.gz)
+    ReadsR=$(ls qc_dna/paired/$Organism/$Strain/R/*_trim.fq.gz)
+    OutDir=$(dirname $Assembly)/kat
+    Prefix="repeat_masked"
+    ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/assemblers/assembly_qc/kat
+    qsub $ProgDir/sub_kat.sh $Assembly $ReadsF $ReadsR $OutDir $Prefix 250
+  done
 ```
