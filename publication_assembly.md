@@ -517,6 +517,23 @@ The results of quast were shown using the following commands:
   done > assembly/quast_results.txt
 ```
 
+```
+Assembly                   contigs_min_500bp_renamed
+# contigs (>= 0 bp)        447                      
+# contigs (>= 1000 bp)     308                      
+Total length (>= 0 bp)     58056435                 
+Total length (>= 1000 bp)  57960885                 
+# contigs                  447                      
+Largest contig             2278540                  
+Total length               58056435                 
+GC (%)                     53.20                    
+N50                        905947                   
+N75                        390361                   
+L50                        23                       
+L75                        47                       
+# N's per 100 kbp          0.00
+```
+
 
 # Repeat Masking
 
@@ -685,12 +702,11 @@ directory:
 
 ```bash
 	ls ~/.gm_key
-	cp /home/armita/prog/genemark/.gm_key_64 ~/.gm_key
+  cp /home/armita/prog/genemark/2019/gm_key_64 ~/.gm_key
 ```
 
 ```bash
-
-for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
+for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
 Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
 Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
 echo "$Organism - $Strain"
@@ -726,7 +742,7 @@ Note - cufflinks doesn't always predict direction of a transcript and
 therefore features can not be restricted by strand when they are intersected.
 
 ```bash
-for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
+for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
 Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
 Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
 echo "$Organism - $Strain"
@@ -738,27 +754,23 @@ qsub $ProgDir/sub_cufflinks.sh $AcceptedHits $OutDir
 done
 ```
 
+
 Secondly, genes were predicted using CodingQuary:
 
 ```bash
-Jobs=$(qstat | grep 'sub_cuffli' | wc -l)
-while [ $Jobs -ge 1 ]; do
-sleep 10m
-printf "."
-Jobs=$(qstat | grep 'sub_cuffli' | wc -l)
-done
-for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
-Jobs=$(qstat | grep 'sub_cuffli' | wc -l)
+
+for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_softmasked_repeatmasker_TPSI_appended.fa); do
+Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
+Jobs=$(qstat | grep 'sub_cuff' | wc -l)
 while [ $Jobs -ge 1 ]; do
 sleep 10
 printf "."
-Jobs=$(qstat | grep 'sub_cuffli' | wc -l)
+Jobs=$(qstat | grep 'sub_cuff' | wc -l)
 done
-Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
-Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
 echo "$Organism - $Strain"
 OutDir=gene_pred/codingquary/$Organism/$Strain
-CufflinksGTF=$(ls gene_pred/cufflinks/$Organism/$Strain/concatenated/transcripts.gtf)
+CufflinksGTF=gene_pred/cufflinks/$Organism/$Strain/concatenated/transcripts.gtf
 ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
 qsub $ProgDir/sub_CodingQuary.sh $Assembly $CufflinksGTF $OutDir
 done
@@ -769,11 +781,11 @@ genes were predicted in regions of the genome, not containing Braker gene
 models:
 
 ```bash
-for BrakerGff in $(ls gene_pred/braker/*/*/*/augustus.gff3 | grep -v 'new'); do
-Strain=$(echo $BrakerGff| rev | cut -d '/' -f3 | rev | sed 's/_braker//g')
+for BrakerGff in $(ls gene_pred/braker/*/*_braker/*/augustus.gff3); do
+Strain=$(echo $BrakerGff| rev | cut -d '/' -f3 | rev | sed 's/_braker_new//g' | sed 's/_braker_pacbio//g' | sed 's/_braker//g')
 Organism=$(echo $BrakerGff | rev | cut -d '/' -f4 | rev)
 echo "$Organism - $Strain"
-Assembly=$(ls repeat_masked/$Organism/$Strain/filtered_contigs/*_softmasked_repeatmasker_TPSI_appended.fa)
+Assembly=$(ls repeat_masked/$Organism/$Strain/filtered_contigs/*_contigs_softmasked_repeatmasker_TPSI_appended.fa)
 CodingQuaryGff=gene_pred/codingquary/$Organism/$Strain/out/PredictedPass.gff3
 PGNGff=gene_pred/codingquary/$Organism/$Strain/out/PGN_predictedPass.gff3
 AddDir=gene_pred/codingquary/$Organism/$Strain/additional
@@ -790,11 +802,8 @@ ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation
 $ProgDir/gene_list_to_gff.pl $AddGenesList $CodingQuaryGff CodingQuarry_v2.0 ID CodingQuary > $AddGenesGff
 $ProgDir/gene_list_to_gff.pl $AddGenesList $PGNGff PGNCodingQuarry_v2.0 ID CodingQuary >> $AddGenesGff
 ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
-# -
-# This section is edited
-$ProgDir/add_CodingQuary_features.pl $AddGenesGff $Assembly > $AddDir/add_genes_CodingQuary_unspliced.gff3
-$ProgDir/correct_CodingQuary_splicing.py --inp_gff $AddDir/add_genes_CodingQuary_unspliced.gff3 > $FinalDir/final_genes_CodingQuary.gff3
-# -
+
+$ProgDir/add_CodingQuary_features.pl $AddGenesGff $Assembly > $FinalDir/final_genes_CodingQuary.gff3
 $ProgDir/gff2fasta.pl $Assembly $FinalDir/final_genes_CodingQuary.gff3 $FinalDir/final_genes_CodingQuary
 cp $BrakerGff $FinalDir/final_genes_Braker.gff3
 $ProgDir/gff2fasta.pl $Assembly $FinalDir/final_genes_Braker.gff3 $FinalDir/final_genes_Braker
@@ -803,64 +812,165 @@ cat $FinalDir/final_genes_Braker.cdna.fasta $FinalDir/final_genes_CodingQuary.cd
 cat $FinalDir/final_genes_Braker.gene.fasta $FinalDir/final_genes_CodingQuary.gene.fasta > $FinalDir/final_genes_combined.gene.fasta
 cat $FinalDir/final_genes_Braker.upstream3000.fasta $FinalDir/final_genes_CodingQuary.upstream3000.fasta > $FinalDir/final_genes_combined.upstream3000.fasta
 
-
-GffBraker=$FinalDir/final_genes_Braker.gff3
-GffQuary=$FinalDir/final_genes_CodingQuary.gff3
+GffBraker=$FinalDir/final_genes_CodingQuary.gff3
+GffQuary=$FinalDir/final_genes_Braker.gff3
 GffAppended=$FinalDir/final_genes_appended.gff3
 cat $GffBraker $GffQuary > $GffAppended
 
-# cat $BrakerGff $AddDir/additional_gene_parsed.gff3 | bedtools sort > $FinalGff
 done
+```
+
+The final number of genes per isolate was observed using:
+```bash
+for DirPath in $(ls -d gene_pred/final/*/*/final | grep -v '_braker'); do
+echo $DirPath;
+cat $DirPath/final_genes_Braker.pep.fasta | grep '>' | wc -l;
+cat $DirPath/final_genes_CodingQuary.pep.fasta | grep '>' | wc -l;
+cat $DirPath/final_genes_combined.pep.fasta | grep '>' | wc -l;
+echo "";
+done
+```
+
+```
+16625
+1713
+18338
 ```
 
 
 In preperation for submission to ncbi, gene models were renamed and duplicate gene features were identified and removed.
- * no duplicate genes were identified
-<!--
-Codingquary was noted to predict a gene that went beyond the end of contig 47 in
-isolate 1177.
 
-As such this gene was removed manually:
 
-```bash
-GffAppended=$(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep '1177')
-cp $GffAppended tmp.gff
-cat tmp.gff | grep -v 'CUFF_8208_1_74' > $GffAppended
-```
- -->
+The next step had problems with the masked pacbio genome. Bioperl could not read in
+the fasta sequences. This was overcome by wrapping the unmasked genome and using this
+fasta file.
 
 ```bash
-  for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep -v 'new'); do
-    Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev)
-    Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
-    echo "$Organism - $Strain"
-    FinalDir=gene_pred/final/$Organism/$Strain/final
-    GffFiltered=$FinalDir/filtered_duplicates.gff
-    ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
-    $ProgDir/remove_dup_features.py --inp_gff $GffAppended --out_gff $GffFiltered
-    GffRenamed=$FinalDir/final_genes_appended_renamed.gff3
-    LogFile=$FinalDir/final_genes_appended_renamed.log
-    ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
-    $ProgDir/gff_rename_genes.py --inp_gff $GffFiltered --conversion_log $LogFile > $GffRenamed
-    rm $GffFiltered
-    Assembly=$(ls repeat_masked/$Organism/$Strain/filtered_contigs/*_softmasked_repeatmasker_TPSI_appended.fa)
-    # Assembly=$(ls repeat_masked/$Organism/$Strain/ncbi_edits_repmask/*_softmasked_repeatmasker_TPSI_appended.fa)
-    $ProgDir/gff2fasta.pl $Assembly $GffRenamed gene_pred/final/$Organism/$Strain/final/final_genes_appended_renamed
-    # The proteins fasta file contains * instead of Xs for stop codons, these should
-    # be changed
-    sed -i 's/\*/X/g' gene_pred/final/$Organism/$Strain/final/final_genes_appended_renamed.pep.fasta
-  done
+for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
+NewName=$(echo $Assembly | sed 's/_unmasked.fa/_unmasked_wrapped.fa/g')
+cat $Assembly | fold > $NewName
+done
 ```
 
-No duplicate genes were found.
+
+Then, additional transcripts were added to Braker gene models, when CodingQuary
+genes were predicted in regions of the genome, not containing Braker gene
+models:
+
 ```bash
-  for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended.gff3); do
-    Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev)
-    Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
-    Gene=$(cat $GffAppended | grep -w 'gene' | wc -l)
-    Protein=$(cat $GffAppended | grep -w 'mRNA' | wc -l)
-    Augustus=$(cat $GffAppended | grep -w 'gene' | grep 'AUGUSTUS' | wc -l)
-    CodingQuary=$(cat $GffAppended | grep -w 'gene' | grep 'CodingQuarry_v2.0' | wc -l)
-    printf "$Organism\t$Strain\t$Gene\t$Protein\t$Augustus\t$CodingQuary\n"
-  done
+for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep -v '_braker'); do
+Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev | sed 's/_UTR//g')
+Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
+echo "$Organism - $Strain"
+FinalDir=gene_pred/final/$Organism/$Strain/final
+GffFiltered=$FinalDir/filtered_duplicates.gff
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
+$ProgDir/remove_dup_features.py --inp_gff $GffAppended --out_gff $GffFiltered
+GffRenamed=$FinalDir/final_genes_appended_renamed.gff3
+LogFile=$FinalDir/final_genes_appended_renamed.log
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
+$ProgDir/gff_rename_genes.py --inp_gff $GffFiltered --conversion_log $LogFile > $GffRenamed
+rm $GffFiltered
+Assembly=$(ls repeat_masked/$Organism/$Strain/*/*_unmasked_wrapped.fa)
+$ProgDir/gff2fasta.pl $Assembly $GffRenamed $FinalDir/final_genes_appended_renamed
+# The proteins fasta file contains * instead of Xs for stop codons, these should
+# be changed
+sed -i 's/\*/X/g' $FinalDir/final_genes_appended_renamed.pep.fasta
+done
+```
+
+```bash
+for Gff in $(ls gene_pred/final/*/*/final/final_genes_appended_renamed.gff3); do
+	Strain=$(echo $Gff | rev | cut -d '/' -f3 | rev)
+	Organism=$(echo $Gff | rev | cut -d '/' -f4 | rev)
+	echo "$Strain - $Organism"
+	cat $Gff | grep -w 'gene' | wc -l
+done
+```
+
+```
+CGMCC3_17371 - C.gloeosporioides
+18032
+```
+
+The final number of genes per isolate was observed using:
+```bash
+for DirPath in $(ls -d gene_pred/final/*/*/final | grep -v '_braker'); do
+echo $DirPath;
+cat $DirPath/final_genes_appended_renamed.pep.fasta | grep '>' | wc -l;
+cat $DirPath/final_genes_appended_renamed.pep.fasta | grep '>' | grep '.t1' | wc -l;
+echo "";
+done
+```
+
+```
+gene_pred/final/C.gloeosporioides/CGMCC3_17371/final
+18337
+18031
+```
+
+#Functional annotation
+
+## A) Interproscan
+
+Interproscan was used to give gene models functional annotations.
+Annotation was run using the commands below:
+
+Note: This is a long-running script. As such, these commands were run using
+'screen' to allow jobs to be submitted and monitored in the background.
+This allows the session to be disconnected and reconnected over time.
+
+Screen output detailing the progress of submission of interproscan jobs
+was redirected to a temporary output file named interproscan_submission.log .
+
+```bash
+screen -a
+cd /home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/interproscan
+for Genes in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+echo $Genes
+$ProgDir/sub_interproscan.sh $Genes
+done 2>&1 | tee -a interproscan_submisison.log
+```
+
+Following interproscan annotation split files were combined using the following
+commands:
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/interproscan
+for Proteins in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+Strain=$(echo $Proteins | rev | cut -d '/' -f3 | rev)
+Organism=$(echo $Proteins | rev | cut -d '/' -f4 | rev)
+echo "$Organism - $Strain"
+echo $Strain
+InterProRaw=gene_pred/interproscan/$Organism/$Strain/raw
+$ProgDir/append_interpro.sh $Proteins $InterProRaw
+done
+```
+
+
+## B) SwissProt
+
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+OutDir=gene_pred/swissprot/$Organism/$Strain
+SwissDbDir=../../uniprot/swissprot
+SwissDbName=uniprot_sprot
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swissprot
+qsub $ProgDir/sub_swissprot.sh $Proteome $OutDir $SwissDbDir $SwissDbName
+done
+```
+
+```bash
+for SwissTable in $(ls gene_pred/swissprot/*/*/swissprot_vMar2018_10_hits.tbl); do
+Strain=$(echo $SwissTable | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $SwissTable | rev | cut -f3 -d '/' | rev)
+echo "$Organism - $Strain"
+OutTable=gene_pred/swissprot/$Organism/$Strain/swissprot_vMar2018_tophit_parsed.tbl
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swissprot
+$ProgDir/swissprot_parser.py --blast_tbl $SwissTable --blast_db_fasta ../../uniprot/swissprot/uniprot_sprot.fasta > $OutTable
+done
 ```
