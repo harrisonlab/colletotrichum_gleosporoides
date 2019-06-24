@@ -649,8 +649,8 @@ RNAseq data was aligned to the assemblies using STAR to provide evidence for gen
 ```bash
   cd /data/scratch/armita/colletotrichum_gloeosporioides
 
-  # for Assembly in $(ls ../../../../home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides/repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
-  for Assembly in $(ls ../../../../home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides/assembly/spades/*/*/ncbi_edits/contigs_min_500bp_renamed.fasta); do
+  for Assembly in $(ls ../../../../home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides/repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
+  # for Assembly in $(ls ../../../../home/groups/harrisonlab/project_files/colletotrichum_gloeosporioides/assembly/spades/*/*/ncbi_edits/contigs_min_500bp_renamed.fasta); do
     Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
     Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
     echo "$Organism - $Strain"
@@ -780,12 +780,18 @@ Then, additional transcripts were added to Braker gene models, when CodingQuary
 genes were predicted in regions of the genome, not containing Braker gene
 models:
 
+Then, additional transcripts were added to Braker gene models, when CodingQuary
+genes were predicted in regions of the genome, not containing Braker gene
+models:
+
+Note - Ensure that the "TPSI_appended.fa" assembly file is correct.
+
 ```bash
 for BrakerGff in $(ls gene_pred/braker/*/*_braker/*/augustus.gff3); do
-Strain=$(echo $BrakerGff| rev | cut -d '/' -f3 | rev | sed 's/_braker_new//g' | sed 's/_braker_pacbio//g' | sed 's/_braker//g')
+Strain=$(echo $BrakerGff| rev | cut -d '/' -f3 | rev | sed 's/_braker//g')
 Organism=$(echo $BrakerGff | rev | cut -d '/' -f4 | rev)
 echo "$Organism - $Strain"
-Assembly=$(ls repeat_masked/$Organism/$Strain/filtered_contigs/*_contigs_softmasked_repeatmasker_TPSI_appended.fa)
+Assembly=$(ls repeat_masked/$Organism/$Strain/filtered_contigs/*_softmasked_repeatmasker_TPSI_appended.fa)
 CodingQuaryGff=gene_pred/codingquary/$Organism/$Strain/out/PredictedPass.gff3
 PGNGff=gene_pred/codingquary/$Organism/$Strain/out/PGN_predictedPass.gff3
 AddDir=gene_pred/codingquary/$Organism/$Strain/additional
@@ -802,8 +808,11 @@ ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation
 $ProgDir/gene_list_to_gff.pl $AddGenesList $CodingQuaryGff CodingQuarry_v2.0 ID CodingQuary > $AddGenesGff
 $ProgDir/gene_list_to_gff.pl $AddGenesList $PGNGff PGNCodingQuarry_v2.0 ID CodingQuary >> $AddGenesGff
 ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
-
-$ProgDir/add_CodingQuary_features.pl $AddGenesGff $Assembly > $FinalDir/final_genes_CodingQuary.gff3
+# -
+# This section is edited
+$ProgDir/add_CodingQuary_features.pl $AddGenesGff $Assembly > $AddDir/add_genes_CodingQuary_unspliced.gff3
+$ProgDir/correct_CodingQuary_splicing.py --inp_gff $AddDir/add_genes_CodingQuary_unspliced.gff3 > $FinalDir/final_genes_CodingQuary.gff3
+# -
 $ProgDir/gff2fasta.pl $Assembly $FinalDir/final_genes_CodingQuary.gff3 $FinalDir/final_genes_CodingQuary
 cp $BrakerGff $FinalDir/final_genes_Braker.gff3
 $ProgDir/gff2fasta.pl $Assembly $FinalDir/final_genes_Braker.gff3 $FinalDir/final_genes_Braker
@@ -812,14 +821,87 @@ cat $FinalDir/final_genes_Braker.cdna.fasta $FinalDir/final_genes_CodingQuary.cd
 cat $FinalDir/final_genes_Braker.gene.fasta $FinalDir/final_genes_CodingQuary.gene.fasta > $FinalDir/final_genes_combined.gene.fasta
 cat $FinalDir/final_genes_Braker.upstream3000.fasta $FinalDir/final_genes_CodingQuary.upstream3000.fasta > $FinalDir/final_genes_combined.upstream3000.fasta
 
-GffBraker=$FinalDir/final_genes_CodingQuary.gff3
-GffQuary=$FinalDir/final_genes_Braker.gff3
+
+GffBraker=$FinalDir/final_genes_Braker.gff3
+GffQuary=$FinalDir/final_genes_CodingQuary.gff3
 GffAppended=$FinalDir/final_genes_appended.gff3
 cat $GffBraker $GffQuary > $GffAppended
-
 done
 ```
 
+```bash
+  for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep -v 'braker'); do
+    Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev)
+    Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
+    Gene=$(cat $GffAppended | grep -w 'gene' | wc -l)
+    Protein=$(cat $GffAppended | grep -w 'mRNA' | wc -l)
+    Augustus=$(cat $GffAppended | grep -w 'gene' | grep 'AUGUSTUS' | wc -l)
+    CodingQuary=$(cat $GffAppended | grep -w 'gene' | grep 'CodingQuarry_v2.0' | wc -l)
+    printf "$Organism\t$Strain\t$Gene\t$Protein\t$Augustus\t$CodingQuary\n"
+  done
+```
+
+```
+C.gloeosporioides       CGMCC3_17371    18143   18447   16459   1684
+```
+
+
+In preperation for submission to ncbi, gene models were renamed and duplicate gene features were identified and removed.
+ * no duplicate genes were identified
+
+<!-- Codingquary was noted to predict a gene that went beyond the end of contig 47 in
+isolate 1177.
+
+As such this gene was removed manually:
+
+```bash
+GffAppended=$(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep '1177')
+cp $GffAppended tmp.gff
+cat tmp.gff | grep -v 'CUFF_8208_1_74' > $GffAppended
+``` -->
+
+
+```bash
+  for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep -v 'braker'); do
+    Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev)
+    Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
+    echo "$Organism - $Strain"
+    FinalDir=gene_pred/final/$Organism/$Strain/final
+    GffFiltered=$FinalDir/filtered_duplicates.gff
+    ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
+    $ProgDir/remove_dup_features.py --inp_gff $GffAppended --out_gff $GffFiltered
+    GffRenamed=$FinalDir/final_genes_appended_renamed.gff3
+    LogFile=$FinalDir/final_genes_appended_renamed.log
+    ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
+    $ProgDir/gff_rename_genes.py --inp_gff $GffFiltered --conversion_log $LogFile > $GffRenamed
+    rm $GffFiltered
+    Assembly=$(ls repeat_masked/$Organism/$Strain/filtered_contigs/*_softmasked_repeatmasker_TPSI_appended.fa)
+    $ProgDir/gff2fasta.pl $Assembly $GffRenamed gene_pred/final/$Organism/$Strain/final/final_genes_appended_renamed
+    # The proteins fasta file contains * instead of Xs for stop codons, these should
+    # be changed
+    sed -i 's/\*/X/g' gene_pred/final/$Organism/$Strain/final/final_genes_appended_renamed.pep.fasta
+  done
+```
+
+Gene CUFF_3819_1_308.t2 was identified as duplicated
+
+```bash
+  for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended_renamed.gff3 | grep -v 'braker'); do
+    Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev)
+    Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
+    Gene=$(cat $GffAppended | grep -w 'gene' | wc -l)
+    Protein=$(cat $GffAppended | grep -w 'mRNA' | wc -l)
+    Augustus=$(cat $GffAppended | grep -w 'gene' | grep 'AUGUSTUS' | wc -l)
+    CodingQuary=$(cat $GffAppended | grep -w 'gene' | grep 'CodingQuarry_v2.0' | wc -l)
+    printf "$Organism\t$Strain\t$Gene\t$Protein\t$Augustus\t$CodingQuary\n"
+  done
+```
+
+```
+C.gloeosporioides       CGMCC3_17371    18143   18446   16459   1684
+```
+
+<!--
 The final number of genes per isolate was observed using:
 ```bash
 for DirPath in $(ls -d gene_pred/final/*/*/final | grep -v '_braker'); do
@@ -832,12 +914,13 @@ done
 ```
 
 ```
-16625
-1713
-18338
-```
+gene_pred/final/C.gloeosporioides/CGMCC3_17371/final
+16758
+1689
+18447
+``` -->
 
-
+<!--
 In preperation for submission to ncbi, gene models were renamed and duplicate gene features were identified and removed.
 
 
@@ -879,18 +962,20 @@ sed -i 's/\*/X/g' $FinalDir/final_genes_appended_renamed.pep.fasta
 done
 ```
 
+Duplicated transcript:CUFF_3819_2_309.t1
+
 ```bash
-for Gff in $(ls gene_pred/final/*/*/final/final_genes_appended_renamed.gff3); do
-	Strain=$(echo $Gff | rev | cut -d '/' -f3 | rev)
-	Organism=$(echo $Gff | rev | cut -d '/' -f4 | rev)
-	echo "$Strain - $Organism"
-	cat $Gff | grep -w 'gene' | wc -l
-done
+  for Gff in $(ls gene_pred/final/*/*/final/final_genes_appended_renamed.gff3); do
+  	Strain=$(echo $Gff | rev | cut -d '/' -f3 | rev)
+  	Organism=$(echo $Gff | rev | cut -d '/' -f4 | rev)
+  	echo "$Strain - $Organism"
+  	cat $Gff | grep -w 'gene' | wc -l
+  done
 ```
 
 ```
 CGMCC3_17371 - C.gloeosporioides
-18032
+18148
 ```
 
 The final number of genes per isolate was observed using:
@@ -905,9 +990,9 @@ done
 
 ```
 gene_pred/final/C.gloeosporioides/CGMCC3_17371/final
-18337
-18031
-```
+18446
+18147
+``` -->
 
 #Functional annotation
 

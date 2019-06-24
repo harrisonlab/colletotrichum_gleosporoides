@@ -131,7 +131,8 @@ Vairables containing locations of files and options for scripts were set:
 AnnieDir="/home/armita/prog/annie/genomeannotation-annie-c1e848b"
 ProgDir="/home/armita/git_repos/emr_repos/tools/genbank_submission"
 # File locations:
-SbtFile="genome_submission/C.gloeosporioides/CGMCC3_17371/template.sbt-4.txt"
+cat genome_submission/C.gloeosporioides/CGMCC3_17371/template.sbt-4.txt | sed -E "s/SUB\w*/SAMN07508183/g" > genome_submission/C.gloeosporioides/CGMCC3_17371/Cg_submission.sbt
+SbtFile=""
 LabID="ArmitageEMR"
 ```
 
@@ -157,7 +158,7 @@ for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_softmasked_rep
   Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
   echo "$Organism - $Strain"
   OutDir="genome_submission/$Organism/$Strain"
-  GffFile=$(ls gene_pred/final/$Organism/"$Strain"*/final/final_genes_appended_renamed.gff3)
+  GffFile=$(ls gene_pred/final/$Organism/"$Strain"*/final/final_genes_appended_renamed.gff3 | grep -v 'braker')
 
   InterProTab=$(ls gene_pred/interproscan/$Organism/"$Strain"*/"$Strain"*_interproscan.tsv)
   SwissProtBlast=$(ls gene_pred/swissprot/$Organism/"$Strain"*/swissprot_vMar2018_tophit_parsed.tbl)
@@ -180,7 +181,7 @@ Organism=$(echo $Assembly | rev | cut -d '/' -f4 | rev)
 Strain=$(echo $Assembly| rev | cut -d '/' -f3 | rev)
 echo "$Organism - $Strain"
 OutDir="genome_submission/$Organism/$Strain"
-GffFile=$(ls gene_pred/final/$Organism/"$Strain"*/final/final_genes_appended_renamed.gff3)
+GffFile=$(ls gene_pred/final/$Organism/"$Strain"*/final/final_genes_appended_renamed.gff3 | grep -v 'braker')
 mkdir -p $OutDir/gag/round1
 gag.py -f $Assembly -g $GffFile -a $OutDir/annie_corrected_output.csv --fix_start_stop -o $OutDir/gag/round1 2>&1 | tee $OutDir/gag_log1.txt
 sed -i 's/Dbxref/db_xref/g' $OutDir/gag/round1/genome.tbl
@@ -214,7 +215,7 @@ echo "$Organism - $Strain"
 OutDir="genome_submission/$Organism/$Strain"
 
 cp $Assembly $OutDir/gag/round1/genome.fsa
-SbtFile=$(ls genome_submission/C.gloeosporioides/CGMCC3_17371/template.sbt-4.txt)
+SbtFile=$(ls genome_submission/C.gloeosporioides/CGMCC3_17371/Cg_submission.sbt)
 cp $SbtFile $OutDir/gag/round1/genome.sbt
 mkdir -p $OutDir/tbl2asn/round1
 tbl2asn -p $OutDir/gag/round1/. -t $OutDir/gag/round1/genome.sbt -r $OutDir/tbl2asn/round1 -M n -X E -Z $OutDir/gag/round1/discrep.txt -j "[organism=$Organism] [strain=$Strain]"
@@ -292,5 +293,7 @@ for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_softmasked_rep
   mkdir $OutDir/tbl2asn/final
   tbl2asn -p $OutDir/gag/edited/. -t $OutDir/gag/edited/genome.sbt -r $OutDir/tbl2asn/final -M n -X E -Z $OutDir/tbl2asn/final/discrep.txt -j "[organism=$Taxon] [strain=$Strain]" -l paired-ends -a r10k -w $OutDir/gag/edited/annotation_methods.strcmt.txt
   cat $OutDir/tbl2asn/final/genome.sqn | sed 's/_pilon//g' | sed 's/title "Saccharopine dehydrogenase.*/title "Saccharopine dehydrogenase/g' | sed 's/"Saccharopine dehydrogenase.*"/"Saccharopine dehydrogenase"/g' > $OutDir/tbl2asn/final/$FinalName.sqn
+  ls $OutDir/tbl2asn/final/$FinalName.sqn
+  cat $OutDir/tbl2asn/final/errorsummary.val
 done
 ```
