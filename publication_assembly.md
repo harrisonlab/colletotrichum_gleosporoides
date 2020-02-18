@@ -574,6 +574,12 @@ bedtools maskfasta -fi $File -bed $TPSI -fo $OutFile
 done
 ```
 
+```
+repeat_masked/C.gloeosporioides/CGMCC3_17371/filtered_contigs/CGMCC3_17371_contigs_softmasked_repeatmasker_TPSI_appended.fa
+Number of masked bases:
+2109446
+```
+
 
 # Gene Prediction
 
@@ -901,99 +907,6 @@ Gene CUFF_3819_1_308.t2 was identified as duplicated
 C.gloeosporioides       CGMCC3_17371    18143   18446   16459   1684
 ```
 
-<!--
-The final number of genes per isolate was observed using:
-```bash
-for DirPath in $(ls -d gene_pred/final/*/*/final | grep -v '_braker'); do
-echo $DirPath;
-cat $DirPath/final_genes_Braker.pep.fasta | grep '>' | wc -l;
-cat $DirPath/final_genes_CodingQuary.pep.fasta | grep '>' | wc -l;
-cat $DirPath/final_genes_combined.pep.fasta | grep '>' | wc -l;
-echo "";
-done
-```
-
-```
-gene_pred/final/C.gloeosporioides/CGMCC3_17371/final
-16758
-1689
-18447
-``` -->
-
-<!--
-In preperation for submission to ncbi, gene models were renamed and duplicate gene features were identified and removed.
-
-
-The next step had problems with the masked pacbio genome. Bioperl could not read in
-the fasta sequences. This was overcome by wrapping the unmasked genome and using this
-fasta file.
-
-```bash
-for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
-NewName=$(echo $Assembly | sed 's/_unmasked.fa/_unmasked_wrapped.fa/g')
-cat $Assembly | fold > $NewName
-done
-```
-
-
-Then, additional transcripts were added to Braker gene models, when CodingQuary
-genes were predicted in regions of the genome, not containing Braker gene
-models:
-
-```bash
-for GffAppended in $(ls gene_pred/final/*/*/final/final_genes_appended.gff3 | grep -v '_braker'); do
-Strain=$(echo $GffAppended | rev | cut -d '/' -f3 | rev | sed 's/_UTR//g')
-Organism=$(echo $GffAppended | rev | cut -d '/' -f4 | rev)
-echo "$Organism - $Strain"
-FinalDir=gene_pred/final/$Organism/$Strain/final
-GffFiltered=$FinalDir/filtered_duplicates.gff
-ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
-$ProgDir/remove_dup_features.py --inp_gff $GffAppended --out_gff $GffFiltered
-GffRenamed=$FinalDir/final_genes_appended_renamed.gff3
-LogFile=$FinalDir/final_genes_appended_renamed.log
-ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/codingquary
-$ProgDir/gff_rename_genes.py --inp_gff $GffFiltered --conversion_log $LogFile > $GffRenamed
-rm $GffFiltered
-Assembly=$(ls repeat_masked/$Organism/$Strain/*/*_unmasked_wrapped.fa)
-$ProgDir/gff2fasta.pl $Assembly $GffRenamed $FinalDir/final_genes_appended_renamed
-# The proteins fasta file contains * instead of Xs for stop codons, these should
-# be changed
-sed -i 's/\*/X/g' $FinalDir/final_genes_appended_renamed.pep.fasta
-done
-```
-
-Duplicated transcript:CUFF_3819_2_309.t1
-
-```bash
-  for Gff in $(ls gene_pred/final/*/*/final/final_genes_appended_renamed.gff3); do
-  	Strain=$(echo $Gff | rev | cut -d '/' -f3 | rev)
-  	Organism=$(echo $Gff | rev | cut -d '/' -f4 | rev)
-  	echo "$Strain - $Organism"
-  	cat $Gff | grep -w 'gene' | wc -l
-  done
-```
-
-```
-CGMCC3_17371 - C.gloeosporioides
-18148
-```
-
-The final number of genes per isolate was observed using:
-```bash
-for DirPath in $(ls -d gene_pred/final/*/*/final | grep -v '_braker'); do
-echo $DirPath;
-cat $DirPath/final_genes_appended_renamed.pep.fasta | grep '>' | wc -l;
-cat $DirPath/final_genes_appended_renamed.pep.fasta | grep '>' | grep '.t1' | wc -l;
-echo "";
-done
-```
-
-```
-gene_pred/final/C.gloeosporioides/CGMCC3_17371/final
-18446
-18147
-``` -->
-
 #Functional annotation
 
 ## A) Interproscan
@@ -1059,3 +972,337 @@ ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/swis
 $ProgDir/swissprot_parser.py --blast_tbl $SwissTable --blast_db_fasta ../../uniprot/swissprot/uniprot_sprot.fasta > $OutTable
 done
 ```
+
+
+
+## Effector genes
+
+Putative pathogenicity and effector related genes were identified within Braker
+gene models using a number of approaches:
+
+ * A) From Augustus gene models - Identifying secreted proteins
+ * B) From Augustus gene models - Effector identification using EffectorP
+ * D) From ORF fragments - Signal peptide & RxLR motif  
+ * E) From ORF fragments - Hmm evidence of WY domains  
+ * F) From ORF fragments - Hmm evidence of RxLR effectors  
+
+
+### A) From Augustus gene models - Identifying secreted proteins
+
+Required programs:
+ * SignalP-4.1
+ * TMHMM
+
+Proteins that were predicted to contain signal peptides were identified using
+the following commands:
+
+```bash
+SplitfileDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/signal_peptides
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/signal_peptides
+CurPath=$PWD
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+SplitDir=gene_pred/final_genes_split/$Organism/$Strain
+mkdir -p $SplitDir
+BaseName="$Organism""_$Strain"_final_preds
+$SplitfileDir/splitfile_500.py --inp_fasta $Proteome --out_dir $SplitDir --out_base $BaseName
+for File in $(ls $SplitDir/*_final_preds_*); do
+Jobs=$(qstat | grep 'pred_sigP' | wc -l)
+while [ $Jobs -gt 20 ]; do
+sleep 10
+printf "."
+Jobs=$(qstat | grep 'pred_sigP' | wc -l)
+done
+printf "\n"
+echo $File
+qsub $ProgDir/pred_sigP.sh $File signalp-4.1
+done
+done
+```
+
+
+The batch files of predicted secreted proteins needed to be combined into a
+single file for each strain. This was done with the following commands:
+
+```bash
+for SplitDir in $(ls -d gene_pred/final_genes_split/*/*); do
+Strain=$(echo $SplitDir | rev |cut -d '/' -f1 | rev)
+Organism=$(echo $SplitDir | rev |cut -d '/' -f2 | rev)
+InStringAA=''
+InStringNeg=''
+InStringTab=''
+InStringTxt=''
+SigpDir=final_genes_signalp-4.1
+for GRP in $(ls -l $SplitDir/*_final_preds_*.fa | rev | cut -d '_' -f1 | rev | sort -n); do  
+InStringAA="$InStringAA gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp.aa";  
+InStringNeg="$InStringNeg gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp_neg.aa";  
+InStringTab="$InStringTab gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp.tab";
+InStringTxt="$InStringTxt gene_pred/$SigpDir/$Organism/$Strain/split/"$Organism"_"$Strain"_final_preds_$GRP""_sp.txt";  
+done
+cat $InStringAA > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_sp.aa
+cat $InStringNeg > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_neg_sp.aa
+tail -n +2 -q $InStringTab > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_sp.tab
+cat $InStringTxt > gene_pred/$SigpDir/$Organism/$Strain/"$Strain"_final_sp.txt
+done
+```
+
+Some proteins that are incorporated into the cell membrane require secretion.
+Therefore proteins with a transmembrane domain are not likely to represent
+cytoplasmic or apoplastic effectors.
+
+Proteins containing a transmembrane domain were identified:
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/transmembrane_helices
+qsub $ProgDir/submit_TMHMM.sh $Proteome
+done
+```
+
+Those proteins with transmembrane domains were removed from lists of Signal
+peptide containing proteins
+
+```bash
+for File in $(ls gene_pred/trans_mem/*/*/*_TM_genes_neg.txt); do
+Strain=$(echo $File | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $File | rev | cut -f3 -d '/' | rev)
+echo "$Organism - $Strain"
+TmHeaders=$(echo "$File" | sed 's/neg.txt/neg_headers.txt/g')
+cat $File | cut -f1 > $TmHeaders
+SigP=$(ls gene_pred/final_genes_signalp-4.1/$Organism/$Strain/*_final_sp.aa)
+OutDir=$(dirname $SigP)
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_from_fasta.py --fasta $SigP --headers $TmHeaders > $OutDir/"$Strain"_final_sp_no_trans_mem.aa
+cat $OutDir/"$Strain"_final_sp_no_trans_mem.aa | grep '>' | wc -l
+done
+```
+
+```
+C.gloeosporioides - CGMCC3_17371
+2070
+```
+
+
+### B) From Augustus gene models - Effector identification using EffectorP
+
+Required programs:
+ * EffectorP.py
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+BaseName="$Organism"_"$Strain"_EffectorP
+OutDir=analysis/effectorP/$Organism/$Strain
+ProgDir=~/git_repos/emr_repos/tools/seq_tools/feature_annotation/fungal_effectors
+qsub $ProgDir/pred_effectorP.sh $Proteome $BaseName $OutDir
+done
+```
+
+Those genes that were predicted as secreted and tested positive by effectorP
+were identified:
+
+```bash
+for File in $(ls analysis/effectorP/*/*/*_EffectorP.txt); do
+Strain=$(echo $File | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $File | rev | cut -f3 -d '/' | rev)
+echo "$Organism - $Strain"
+Headers=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_headers.txt/g')
+cat $File | grep 'Effector' | cut -f1 > $Headers
+Secretome=$(ls gene_pred/final_genes_signalp-4.1/$Organism/$Strain/*_final_sp_no_trans_mem.aa)
+OutFile=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_secreted.aa/g')
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_from_fasta.py --fasta $Secretome --headers $Headers > $OutFile
+OutFileHeaders=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_secreted_headers.txt/g')
+cat $OutFile | grep '>' | tr -d '>' > $OutFileHeaders
+cat $OutFileHeaders | wc -l
+Gff=$(ls gene_pred/final/$Organism/$Strain/*/final_genes_appended.gff3)
+EffectorP_Gff=$(echo "$File" | sed 's/_EffectorP.txt/_EffectorP_secreted.gff/g')
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_gff_for_sigP_hits.pl $OutFileHeaders $Gff effectorP ID > $EffectorP_Gff
+done
+```
+
+```
+C.gloeosporioides - CGMCC3_17371
+612
+```
+
+
+## C) CAZY proteins
+
+Carbohydrte active enzymes were identified using CAZY following recomendations
+at http://csbl.bmb.uga.edu/dbCAN/download/readme.txt :
+
+```bash
+for Proteome in $(ls gene_pred/final/*/*/*/final_genes_appended_renamed.pep.fasta | grep -v '_braker'); do
+Strain=$(echo $Proteome | rev | cut -f3 -d '/' | rev)
+Organism=$(echo $Proteome | rev | cut -f4 -d '/' | rev)
+OutDir=gene_pred/CAZY/$Organism/$Strain
+mkdir -p $OutDir
+Prefix="$Strain"_CAZY
+CazyHmm=../../dbCAN/dbCAN-fam-HMMs.txt
+ProgDir=/home/armita/git_repos/emr_repos/tools/seq_tools/feature_annotation/HMMER
+qsub $ProgDir/sub_hmmscan.sh $CazyHmm $Proteome $Prefix $OutDir
+done
+```
+
+The Hmm parser was used to filter hits by an E-value of E1x10-5 or E 1x10-e3 if they had a hit over a length of X %.
+
+Those proteins with a signal peptide were extracted from the list and  gff files
+representing these proteins made.
+
+```bash
+for File in $(ls gene_pred/CAZY/*/*/*CAZY.out.dm); do
+Strain=$(echo $File | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $File | rev | cut -f3 -d '/' | rev)
+OutDir=$(dirname $File)
+echo "$Organism - $Strain"
+ProgDir=/home/groups/harrisonlab/dbCAN
+$ProgDir/hmmscan-parser.sh $OutDir/"$Strain"_CAZY.out.dm > $OutDir/"$Strain"_CAZY.out.dm.ps
+CazyHeaders=$(echo $File | sed 's/.out.dm/_headers.txt/g')
+cat $OutDir/"$Strain"_CAZY.out.dm.ps | cut -f3 | sort | uniq > $CazyHeaders
+echo "number of CAZY genes identified:"
+cat $CazyHeaders | wc -l
+# Gff=$(ls gene_pred/codingquary/$Organism/$Strain/final/final_genes_appended.gff3)
+Gff=$(ls gene_pred/final/$Organism/$Strain/final/final_genes_appended.gff3)
+CazyGff=$OutDir/"$Strain"_CAZY.gff
+ProgDir=/home/armita/git_repos/emr_repos/tools/gene_prediction/ORF_finder
+$ProgDir/extract_gff_for_sigP_hits.pl $CazyHeaders $Gff CAZyme ID > $CazyGff
+
+SecretedProts=$(ls gene_pred/final_genes_signalp-4.1/$Organism/$Strain/"$Strain"_final_sp_no_trans_mem.aa)
+SecretedHeaders=$(echo $SecretedProts | sed 's/.aa/_headers.txt/g')
+cat $SecretedProts | grep '>' | tr -d '>' > $SecretedHeaders
+CazyGffSecreted=$OutDir/"$Strain"_CAZY_secreted.gff
+$ProgDir/extract_gff_for_sigP_hits.pl $SecretedHeaders $CazyGff Secreted_CAZyme ID > $CazyGffSecreted
+echo "number of Secreted CAZY genes identified:"
+cat $CazyGffSecreted | grep -w 'mRNA' | cut -f9 | tr -d 'ID=' | cut -f1 -d ';' > $OutDir/"$Strain"_CAZY_secreted_headers.txt
+cat $OutDir/"$Strain"_CAZY_secreted_headers.txt | wc -l
+done
+```
+
+```
+number of CAZY genes identified:
+1048
+530
+```
+
+Note - the CAZY genes identified may need further filtering based on e value and
+cuttoff length - see below:
+
+Cols in yourfile.out.dm.ps:
+1. Family HMM
+2. HMM length
+3. Query ID
+4. Query length
+5. E-value (how similar to the family HMM)
+6. HMM start
+7. HMM end
+8. Query start
+9. Query end
+10. Coverage
+
+* For fungi, use E-value < 1e-17 and coverage > 0.45
+
+* The best threshold varies for different CAZyme classes (please see http://www.ncbi.nlm.nih.gov/pmc/articles/PMC4132414/ for details). Basically to annotate GH proteins, one should use a very relax coverage cutoff or the sensitivity will be low (Supplementary Tables S4 and S9); (ii) to annotate CE families a very stringent E-value cutoff and coverage cutoff should be used; otherwise the precision will be very low due to a very high false positive rate (Supplementary Tables S5 and S10)
+
+
+
+## Identifying Chittin-masking genes
+
+Protein sequence of previously characterised SIX genes used to BLAST against
+assemblies.
+
+```bash
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+for Assembly in $(ls repeat_masked/*/*/filtered_contigs/*_contigs_unmasked.fa); do
+echo $Assembly
+Query=analysis/blast_homology/LysM_genes/Mentlak_et_al_2012_LysM_Sup1.fa
+qsub $ProgDir/blast_pipe.sh $Query protein $Assembly
+done
+```
+
+Once blast searches had completed, the BLAST hits were converted to GFF
+annotations:
+
+```bash
+for BlastHits in $(ls analysis/blast_homology/*/*/*Mentlak_et_al_2012_LysM_Sup1.fa_homologs.csv); do
+Strain=$(echo $BlastHits | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $BlastHits | rev | cut -f3 -d '/' | rev)
+ProgDir=/home/armita/git_repos/emr_repos/tools/pathogen/blast
+HitsGff=$(echo $BlastHits | sed  's/.csv/.gff/g')
+Column2=LysM_homolog
+NumHits=3
+$ProgDir/blast2gff.pl $Column2 $NumHits $BlastHits > $HitsGff
+done
+```
+
+The M. oryzae Chittin masking gene that has been shown to be essential for
+infection was extracted from blast hits:
+
+```bash
+Hits=analysis/blast_homology/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_Mentlak_et_al_2012_LysM_Sup1.fa_homologs.csv
+echo "The hit for spl1 is:"
+cat $Hits | grep -e 'No.hits' -e 'MGG_10097_Magnaporthe_oryzae'
+echo "The hit for spl2 is:"
+cat $Hits | grep -e 'No.hits' -e 'MGG_03468_Magnaporthe_oryzae'
+```
+This identified two hits in the genome, one to NODE 256 and one to node 116.
+Node 116 had the better match. The Mentlak paper describes there being two copies
+of the Spl gene in the Mo genome, with the second being non-essential for infection.
+
+Hits from spl queries showed greater homology from spl1 (~76% length and 0.49%
+identity) than those from spl2 (~47% length and 0.17% identity)
+
+The gff annotations of blast hits were intersected with predicted gene models
+to determine which genes represented these regions.
+
+```bash
+for HitsGff in $(ls analysis/blast_homology/*/*/*Mentlak_et_al_2012_LysM_Sup1.fa_homologs.gff | grep 'CGMCC3_17371'); do
+Strain=$(echo $HitsGff | rev | cut -f2 -d '/' | rev)
+Organism=$(echo $HitsGff | rev | cut -f3 -d '/' | rev)
+GeneGff=$(ls gene_pred/final/$Organism/$Strain/final/final_genes_appended.gff3)
+OutDir=$(dirname $HitsGff)
+LysmIntersect=$OutDir/"$Strain"_LysM_hit_genes.bed
+bedtools intersect -wao -a $HitsGff -b $GeneGff > $LysmIntersect
+echo "Gene models intersected are:"
+cat $LysmIntersect | grep -w 'gene' | cut -f18 | cut -f2 -d '=' | tr -d ';' | sort | uniq
+done
+```
+
+Gene models intersected were g11852 & g14420.
+```
+>g11852.t1
+MQTSYIFTTLLAAAGLVAALPQATPTQVTPTGTASATASATPTCSQGPVVDYTVVSGDTL
+TIISQKLSSGICDIAKLNSLENPNLILLGQVLKVPTHICNPDNTSCLSKPGTATCVEGGP
+ATYTIQKGDTFFIVAGDLGLDVNALLAANEGVDPLLLQEGQVINIPVCKX
+>g14420.t1
+MQFSIFTVLAAAASAVVALPAATPTAAATATPSATCGKIGNFHKTTVKAGQTLTTIAQRY
+NSGICDIAWQNKLANPNVIFAGQVLLVPVDVCNPDNTSCITPTGEATCVTGGPATYTIKS
+GDTFFVVAQSLGITTDSLTGANPGVAAESLQVGQVIKVPVCX
+```
+
+These results were cross referenced against interproscan annotation results:
+
+```bash
+  OutDir=analysis/LysM
+  mkdir -p $OutDir
+  InterproTsv=gene_pred/interproscan/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_interproscan.tsv
+  cat $InterproTsv | grep -w 'LysM domain' | cut -f1 | sort | uniq > $OutDir/LysM_gene_headers.txt
+  echo "Number of LysM proteins:"
+  cat $OutDir/LysM_gene_headers.txt | wc -l
+  Secretedheaders=gene_pred/final_genes_signalp-4.1/C.gloeosporioides/CGMCC3_17371/CGMCC3_17371_final_sp_no_trans_mem_headers.txt
+  cat $Secretedheaders | grep -f $OutDir/LysM_gene_headers.txt > $OutDir/LysM_gene_headers_secreted.txt
+  echo "Number of secreted LysM proteins:"
+  cat $OutDir/LysM_gene_headers_secreted.txt | wc -l
+```
+
+Number of LysM proteins:
+31
+Number of secreted LysM proteins:
+18
+
+The secreted list included both g11852 & g14420.
